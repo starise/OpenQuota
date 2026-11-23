@@ -15,9 +15,8 @@ OpenQuota tracks Claude subscription limits and local Claude usage history.
 
 ## Sign-in and local data
 
-Sign in with Claude Code by running `claude`. OpenQuota reuses the credentials maintained by the
-CLI, including `CLAUDE_CONFIG_DIR` when it is set. Refreshed CLI credentials are saved back to the
-same source when possible.
+Sign in with Claude Code by running `claude`. OpenQuota reads the credentials maintained by the
+CLI, including `CLAUDE_CONFIG_DIR` when it is set. Claude Code handles credential renewal.
 
 ## Multiple accounts
 
@@ -40,6 +39,7 @@ uploaded by OpenQuota.
 
 - **Not logged in** — run `claude`, complete sign-in, then refresh OpenQuota.
 - **Claude Desktop login found** — sign in once through the Claude Code CLI.
-- **Session or token expired** — sign in again with `claude`.
+- **Session or token expired** — open Claude Code with the affected profile, sign in if prompted,
+  then refresh OpenQuota.
 - **No local history** — use Claude Code normally and check whether `CLAUDE_CONFIG_DIR` points to
   the directory containing your Claude data.

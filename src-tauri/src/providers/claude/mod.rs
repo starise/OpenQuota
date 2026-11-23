@@ -142,14 +142,10 @@ pub enum ClaudeError {
         "Claude Desktop login found, but its macOS-only encrypted session cannot be reused safely. Run `claude` in a terminal and sign in once."
     )]
     DesktopAppOnly,
-    #[error("Your Claude session expired. Run `claude` to sign in again.")]
-    SessionExpired,
-    #[error("Your Claude token expired. Run `claude` to sign in again.")]
+    #[error("Open Claude Code to renew this login, then refresh OpenQuota.")]
     TokenExpired,
     #[error("Claude OAuth settings contain an invalid URL.")]
     InvalidOAuthUrl,
-    #[error("Refreshed Claude credentials could not be saved.")]
-    AuthWrite,
     #[error("Claude login changed during refresh. Refresh again.")]
     CredentialsChanged,
     #[error("The Claude account changed while OpenQuota was running. Restart OpenQuota to reconnect it safely.")]
@@ -305,7 +301,9 @@ impl ClaudeProvider {
         let mut credential_reloads_remaining = 1;
         loop {
             match self.refresh_inner_once(config) {
-                Err(ClaudeError::CredentialsChanged) if credential_reloads_remaining > 0 => {
+                Err(ClaudeError::CredentialsChanged)
+                    if credential_reloads_remaining > 0 && self.account_identity.is_some() =>
+                {
                     credential_reloads_remaining -= 1;
                     crate::app_info!(
                         "auth:claude",
@@ -346,18 +344,16 @@ impl ClaudeProvider {
         );
         let now = Utc::now();
         let pricing = self.pricing.current();
-        let mut credential_generation = ClaudeCredentialGeneration::from_candidates(&candidates);
+        let credential_generation = ClaudeCredentialGeneration::from_candidates(&candidates);
         let mut last_auth_error = None;
-        for mut credential in candidates {
-            match self.refresh_candidate(
-                &mut credential,
-                config,
-                now,
-                &pricing,
-                &mut credential_generation,
-            ) {
+        for credential in candidates {
+            if last_auth_error.is_some() && !credential.has_profile_scope() {
+                continue;
+            }
+            match self.refresh_candidate(&credential, config, now, &pricing, &credential_generation)
+            {
                 Ok(snapshot) => return Ok(snapshot),
-                Err(error @ (ClaudeError::SessionExpired | ClaudeError::TokenExpired)) => {
+                Err(error @ ClaudeError::TokenExpired) => {
                     last_auth_error = Some(error);
                 }
                 Err(error) => return Err(error),
@@ -377,11 +373,11 @@ impl ClaudeProvider {
 
     fn refresh_candidate(
         &self,
-        credential: &mut ClaudeCredential,
+        credential: &ClaudeCredential,
         config: &auth::ClaudeOAuthConfig,
         now: chrono::DateTime<Utc>,
         pricing: &ModelPricing,
-        credential_generation: &mut ClaudeCredentialGeneration,
+        credential_generation: &ClaudeCredentialGeneration,
     ) -> Result<ProviderSnapshot, ClaudeError> {
         let mut warnings = Vec::new();
         let usage = scan_or_cached_usage(
@@ -434,20 +430,6 @@ impl ClaudeProvider {
             });
         }
         self.activate_live_usage_cache(credential.fingerprint());
-        if credential.needs_refresh(now.timestamp_millis()) {
-            let previous_fingerprint = credential.fingerprint();
-            refresh_credential(
-                &self.client,
-                credential,
-                config,
-                now,
-                &mut warnings,
-                credential_generation,
-                &self.credential_scope,
-            )?;
-            self.replace_live_usage_fingerprint(previous_fingerprint, credential.fingerprint());
-        }
-
         let cooldown_until = self
             .rate_limited_until
             .lock()
@@ -483,25 +465,11 @@ impl ClaudeProvider {
         }
 
         let token = credential.access_token().ok_or(ClaudeError::NotLoggedIn)?;
-        let (mut status, mut body, mut retry_after) = self.client.fetch_usage(token, config)?;
-        if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) {
-            let previous_fingerprint = credential.fingerprint();
-            refresh_credential(
-                &self.client,
-                credential,
-                config,
-                now,
-                &mut warnings,
-                credential_generation,
-                &self.credential_scope,
-            )?;
-            self.replace_live_usage_fingerprint(previous_fingerprint, credential.fingerprint());
-            let token = credential.access_token().ok_or(ClaudeError::TokenExpired)?;
-            (status, body, retry_after) = self.client.fetch_usage(token, config)?;
-        }
+        let (status, body, retry_after) = self.client.fetch_usage(token, config)?;
         if auth::credential_generation(&self.credential_scope) != *credential_generation {
             return Err(ClaudeError::CredentialsChanged);
         }
+        self.ensure_account_identity_current()?;
         if status == StatusCode::TOO_MANY_REQUESTS {
             let retry = retry_after.unwrap_or(5 * 60);
             if let Ok(mut until) = self.rate_limited_until.lock() {
@@ -589,14 +557,6 @@ impl ClaudeProvider {
             *until = None;
         }
     }
-
-    fn replace_live_usage_fingerprint(&self, previous: [u8; 32], current: [u8; 32]) {
-        if let Ok(mut active) = self.cached_credential_fingerprint.lock() {
-            if active.as_ref() == Some(&previous) {
-                *active = Some(current);
-            }
-        }
-    }
 }
 
 fn rate_limit_notice(retry_seconds: u64, showing_stale_limits: bool) -> ProviderNotice {
@@ -623,51 +583,6 @@ fn retry_minutes(retry_seconds: u64) -> String {
         "{minutes} {}",
         if minutes == 1 { "minute" } else { "minutes" }
     )
-}
-
-fn refresh_credential(
-    client: &ClaudeClient,
-    credential: &mut ClaudeCredential,
-    config: &auth::ClaudeOAuthConfig,
-    now: chrono::DateTime<Utc>,
-    warnings: &mut Vec<String>,
-    credential_generation: &mut ClaudeCredentialGeneration,
-    credential_scope: &ClaudeCredentialScope,
-) -> Result<(), ClaudeError> {
-    let refresh_token = credential
-        .oauth
-        .refresh_token
-        .as_deref()
-        .filter(|value| !value.is_empty())
-        .ok_or(ClaudeError::TokenExpired)?;
-    let refreshed = client.refresh_token(refresh_token, config)?;
-    match credential.update_and_save(
-        refreshed.access_token,
-        refreshed.refresh_token,
-        refreshed.expires_in,
-        now.timestamp_millis(),
-        credential_generation,
-        credential_scope,
-    ) {
-        Ok(true) => {
-            *credential_generation = credential_generation
-                .replacing(credential)
-                .ok_or(ClaudeError::CredentialsChanged)?;
-        }
-        Ok(false) => {}
-        Err(ClaudeError::CredentialsChanged) => return Err(ClaudeError::CredentialsChanged),
-        Err(_) => {
-            crate::app_error!(
-                "auth:claude",
-                "failed to persist rotated credentials; using them for this session only"
-            );
-            warnings.push(
-                "The refreshed Claude login is active for this session but could not be saved."
-                    .into(),
-            );
-        }
-    }
-    Ok(())
 }
 
 fn plan_name(credential: &ClaudeCredential) -> Option<String> {
@@ -711,14 +626,12 @@ impl crate::providers::UsageProvider for ClaudeProvider {
             let kind = match error {
                 ClaudeError::NotLoggedIn
                 | ClaudeError::DesktopAppOnly
-                | ClaudeError::SessionExpired
                 | ClaudeError::TokenExpired
                 | ClaudeError::CredentialsChanged
                 | ClaudeError::AccountChanged => Kind::Authentication,
                 ClaudeError::InvalidOAuthUrl | ClaudeError::InvalidResponse => {
                     Kind::InvalidResponse
                 }
-                ClaudeError::AuthWrite => Kind::CredentialStorage,
                 ClaudeError::RequestFailed(429) => Kind::RateLimited,
                 ClaudeError::RequestFailed(_) | ClaudeError::ConnectionFailed => Kind::Network,
                 ClaudeError::LocalUsage => Kind::LocalData,
@@ -906,16 +819,34 @@ mod tests {
 
     #[test]
     fn login_changed_during_usage_request_is_not_published_under_the_old_card() {
+        check_cli_login_during_refresh(CliLogin::SwitchedAccount);
+    }
+
+    #[test]
+    fn rejected_token_retries_with_renewed_credentials_for_the_same_account() {
+        check_cli_login_during_refresh(CliLogin::Renewed);
+    }
+
+    #[test]
+    fn rejected_token_without_cli_renewal_reports_expired_login() {
+        check_cli_login_during_refresh(CliLogin::Unchanged);
+    }
+
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum CliLogin {
+        Unchanged,
+        Renewed,
+        SwitchedAccount,
+    }
+
+    fn check_cli_login_during_refresh(login: CliLogin) {
         let directory = tempdir().unwrap();
         let account_root = directory.path().join("account");
         fs::create_dir_all(&account_root).unwrap();
         let credential_path = account_root.join(".credentials.json");
         let identity_path = account_root.join(".claude.json");
-        fs::write(
-            &credential_path,
-            credential_json("account-a", "refresh-a", "pro"),
-        )
-        .unwrap();
+        let original = credential_json("old-token", "refresh-a", "pro");
+        fs::write(&credential_path, &original).unwrap();
         fs::write(
             &identity_path,
             r#"{"oauthAccount":{"accountUuid":"account-a"}}"#,
@@ -939,7 +870,24 @@ mod tests {
                 .unwrap();
             first_request_tx.send(()).unwrap();
             first_response_rx.recv().unwrap();
-            write_http_response(&mut stream, 25);
+            if login == CliLogin::SwitchedAccount {
+                write_http_response(&mut stream, 25);
+            } else {
+                write!(
+                    stream,
+                    "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                )
+                .unwrap();
+            }
+            if login == CliLogin::Renewed {
+                drop(stream);
+                let (mut stream, _) = listener.accept().unwrap();
+                let length = stream.read(&mut bytes).unwrap();
+                let request = String::from_utf8_lossy(&bytes[..length]).to_ascii_lowercase();
+                assert!(request.starts_with("get /usage "));
+                assert!(request.contains("authorization: bearer new-token\r\n"));
+                write_http_response(&mut stream, 42);
+            }
             authorization
         });
 
@@ -964,29 +912,40 @@ mod tests {
         ));
         let config = ClaudeOAuthConfig {
             usage_url: format!("{base}/usage"),
-            refresh_url: format!("{base}/token"),
-            client_id: "test-client".into(),
         };
         let refresh = thread::spawn(move || provider.refresh_inner_with_config(&config));
 
         first_request_rx
             .recv_timeout(StdDuration::from_secs(2))
             .unwrap();
-        fs::write(
-            &credential_path,
-            credential_json("account-b", "refresh-b", "max"),
-        )
-        .unwrap();
-        fs::write(
-            &identity_path,
-            r#"{"oauthAccount":{"accountUuid":"account-b"}}"#,
-        )
-        .unwrap();
+        let expected_credentials = if login == CliLogin::Unchanged {
+            original
+        } else {
+            let replacement = credential_json("new-token", "refresh-b", "max");
+            fs::write(&credential_path, &replacement).unwrap();
+            replacement
+        };
+        if login == CliLogin::SwitchedAccount {
+            fs::write(
+                &identity_path,
+                r#"{"oauthAccount":{"accountUuid":"account-b"}}"#,
+            )
+            .unwrap();
+        }
         first_response_tx.send(()).unwrap();
 
-        let error = refresh.join().unwrap().unwrap_err();
-        let authorization = server.join().unwrap();
-        assert!(matches!(error, ClaudeError::AccountChanged));
-        assert_eq!(authorization, "Bearer account-a");
+        let result = refresh.join().unwrap();
+        match login {
+            CliLogin::Unchanged => assert!(matches!(result, Err(ClaudeError::TokenExpired))),
+            CliLogin::Renewed => assert_eq!(result.unwrap().quotas[0].used_percent, 42.0),
+            CliLogin::SwitchedAccount => {
+                assert!(matches!(result, Err(ClaudeError::AccountChanged)))
+            }
+        }
+        assert_eq!(server.join().unwrap(), "Bearer old-token");
+        assert_eq!(
+            fs::read_to_string(credential_path).unwrap(),
+            expected_credentials
+        );
     }
 }

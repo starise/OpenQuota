@@ -1,19 +1,8 @@
 use chrono::{DateTime, Utc};
 use reqwest::{blocking::Client, StatusCode};
-use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::{auth::ClaudeOAuthConfig, ClaudeError};
-
-const OAUTH_SCOPES: &str =
-    "user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload";
-
-#[derive(Debug, Deserialize)]
-pub struct ClaudeRefreshResponse {
-    pub access_token: String,
-    pub refresh_token: Option<String>,
-    pub expires_in: Option<f64>,
-}
 
 #[derive(Clone)]
 pub struct ClaudeClient {
@@ -64,59 +53,12 @@ impl ClaudeClient {
             .get("retry-after")
             .and_then(|value| value.to_str().ok())
             .and_then(|value| parse_retry_after(value, Utc::now()));
-        let body = response.json().map_err(|_| ClaudeError::InvalidResponse)?;
+        let body = if status.is_success() {
+            response.json().map_err(|_| ClaudeError::InvalidResponse)?
+        } else {
+            Value::Null
+        };
         Ok((status, body, retry_after))
-    }
-
-    pub fn refresh_token(
-        &self,
-        token: &str,
-        config: &ClaudeOAuthConfig,
-    ) -> Result<ClaudeRefreshResponse, ClaudeError> {
-        let started = std::time::Instant::now();
-        crate::app_info!("auth:claude", "token refresh attempt");
-        let response = self
-            .client
-            .post(&config.refresh_url)
-            .json(&json!({
-                "grant_type": "refresh_token",
-                "refresh_token": token,
-                "client_id": config.client_id,
-                "scope": OAUTH_SCOPES
-            }))
-            .send()
-            .map_err(|_| {
-                crate::app_warn!("auth:claude", "token refresh failed (transport)");
-                ClaudeError::ConnectionFailed
-            })?;
-        let status = response.status();
-        crate::app_debug!(
-            "http",
-            "claude token refresh HTTP {} ({}ms)",
-            status.as_u16(),
-            started.elapsed().as_millis()
-        );
-        if !status.is_success() {
-            if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::BAD_REQUEST) {
-                let body = response.json::<Value>().ok();
-                let code = body.as_ref().and_then(|body| {
-                    body.get("error")
-                        .and_then(Value::as_str)
-                        .or_else(|| body.get("error_description").and_then(Value::as_str))
-                });
-                if code == Some("invalid_grant") {
-                    return Err(ClaudeError::SessionExpired);
-                }
-            }
-            return Err(ClaudeError::RequestFailed(status.as_u16()));
-        }
-        let refreshed: ClaudeRefreshResponse =
-            response.json().map_err(|_| ClaudeError::InvalidResponse)?;
-        if refreshed.access_token.trim().is_empty() {
-            return Err(ClaudeError::TokenExpired);
-        }
-        crate::app_info!("auth:claude", "token refresh succeeded");
-        Ok(refreshed)
     }
 }
 
@@ -145,8 +87,6 @@ mod tests {
     fn config(base: &str) -> ClaudeOAuthConfig {
         ClaudeOAuthConfig {
             usage_url: format!("{base}/usage"),
-            refresh_url: format!("{base}/token"),
-            client_id: "test-client".into(),
         }
     }
 
@@ -185,36 +125,6 @@ mod tests {
             .unwrap_err();
         assert!(matches!(error, ClaudeError::ConnectionFailed));
         assert!(!error.to_string().contains("secret-token"));
-    }
-
-    #[test]
-    fn refresh_distinguishes_auth_failures_and_rate_limits() {
-        let forbidden = test_http::serve_once(400, &[], r#"{"error":"invalid_grant"}"#);
-        assert!(matches!(
-            ClaudeClient::new()
-                .unwrap()
-                .refresh_token("secret-refresh", &config(&forbidden)),
-            Err(ClaudeError::SessionExpired)
-        ));
-
-        let limited = test_http::serve_once(429, &[], r#"{"error":"slow_down"}"#);
-        assert!(matches!(
-            ClaudeClient::new()
-                .unwrap()
-                .refresh_token("secret-refresh", &config(&limited)),
-            Err(ClaudeError::RequestFailed(429))
-        ));
-    }
-
-    #[test]
-    fn refresh_does_not_misclassify_an_unrecognized_400_as_expired() {
-        let base = test_http::serve_once(400, &[], "<html>Bad Gateway</html>");
-        assert!(matches!(
-            ClaudeClient::new()
-                .unwrap()
-                .refresh_token("secret-refresh", &config(&base)),
-            Err(ClaudeError::RequestFailed(400))
-        ));
     }
 
     #[test]
