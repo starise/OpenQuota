@@ -24,10 +24,12 @@ pub fn map_credits(data: &serde_json::Map<String, Value>) -> CreditsMetrics {
         return CreditsMetrics::default();
     };
     let used = total_usage.max(0.0);
-    let total = number(data.get("total_credits")).unwrap_or(0.0).max(0.0);
+    let total = number(data.get("total_credits")).map(|value| value.max(0.0));
     CreditsMetrics {
-        quota: (total > 0.0).then(|| dollars_quota("credits", "Credits", used, total)),
-        balance: Some(dollars_value("balance", "Balance", (total - used).max(0.0))),
+        quota: total
+            .filter(|total| *total > 0.0)
+            .map(|total| dollars_quota("credits", "Credits", used, total)),
+        balance: total.map(|total| dollars_value("balance", "Balance", (total - used).max(0.0))),
     }
 }
 
@@ -44,13 +46,11 @@ pub fn map_key(data: &serde_json::Map<String, Value>) -> KeyMetrics {
     .collect();
     let quota = number(data.get("limit"))
         .filter(|limit| *limit > 0.0)
-        .map(|limit| {
-            dollars_quota(
-                "keyLimit",
-                "Key Limit",
-                number(data.get("usage")).unwrap_or(0.0).max(0.0),
-                limit,
-            )
+        .and_then(|limit| {
+            number(data.get("limit_remaining")).map(|remaining| (limit, remaining.max(0.0)))
+        })
+        .map(|(limit, remaining)| {
+            dollars_quota("keyLimit", "Key Limit", (limit - remaining).max(0.0), limit)
         });
     let plan = data
         .get("is_free_tier")
@@ -139,13 +139,22 @@ mod tests {
     }
 
     #[test]
+    fn missing_total_credits_does_not_report_a_zero_balance() {
+        let body = json!({"data":{"total_usage":12.5}});
+        let mapped = map_credits(data_object(&body).unwrap());
+        assert!(mapped.quota.is_none());
+        assert!(mapped.balance.is_none());
+    }
+
+    #[test]
     fn key_metadata_maps_period_spend_plan_and_optional_cap() {
         let body = json!({"data":{
             "is_free_tier":false,
             "usage_daily":0,
             "usage_weekly":1.25,
             "usage_monthly":"4.5",
-            "usage":2,
+            "usage":40,
+            "limit_remaining":3,
             "limit":5
         }});
         let mapped = map_key(data_object(&body).unwrap());
@@ -159,5 +168,19 @@ mod tests {
             [("today", 0.0), ("week", 1.25), ("month", 4.5)]
         );
         assert_eq!(mapped.quota.unwrap().used_value, Some(2.0));
+    }
+
+    #[test]
+    fn key_cap_is_omitted_when_remaining_limit_is_unknown() {
+        let body = json!({"data":{"usage":2,"limit":5}});
+        let mapped = map_key(data_object(&body).unwrap());
+        assert!(mapped.quota.is_none());
+    }
+
+    #[test]
+    fn key_cap_clamps_remaining_spend_to_zero() {
+        let body = json!({"data":{"limit_remaining":9,"limit":5}});
+        let mapped = map_key(data_object(&body).unwrap());
+        assert_eq!(mapped.quota.unwrap().used_value, Some(0.0));
     }
 }
