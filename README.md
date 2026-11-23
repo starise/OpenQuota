@@ -101,22 +101,22 @@ Requirements:
 Install dependencies and start the development app:
 
 ```sh
-corepack pnpm install --frozen-lockfile
-corepack pnpm tauri dev
+pnpm install --frozen-lockfile
+pnpm tauri dev
 ```
 
 Run the complete quality checks:
 
 ```sh
-corepack pnpm verify
+pnpm verify
 ```
 
 Build an installer for the current platform:
 
 ```sh
-corepack pnpm build:installer             # Windows
-corepack pnpm build:linux                 # Linux
-corepack pnpm tauri build --bundles dmg   # macOS
+pnpm build:installer             # Windows
+pnpm build:linux                 # Linux
+pnpm tauri build --bundles dmg   # macOS
 ```
 
 Maintainers can review updater and optional native-signing requirements in

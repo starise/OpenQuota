@@ -31,14 +31,14 @@ You need Node.js 22 or later, pnpm 11.11.0, stable Rust, and the
 [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) for your platform.
 
 ```sh
-corepack pnpm install --frozen-lockfile
-corepack pnpm tauri dev
+pnpm install --frozen-lockfile
+pnpm tauri dev
 ```
 
 Run the complete quality checks before submitting a pull request:
 
 ```sh
-corepack pnpm verify
+pnpm verify
 ```
 
 ## Pull requests
