@@ -48,7 +48,9 @@ pub fn map_usage(body: &Value) -> Result<MiniMaxMappedUsage, MiniMaxError> {
         .find(|model| model.get("model_name").and_then(Value::as_str) == Some("general"))
         .ok_or(MiniMaxError::InvalidResponse)?;
 
-    let weekly = quota_from_model(general, Window::Weekly)?;
+    // Weekly usage is an optional plan feature. Keep a valid session meter
+    // when the response omits the weekly window or its supporting data.
+    let weekly = quota_from_model(general, Window::Weekly).ok().flatten();
     let session = quota_from_model(general, Window::Interval)?;
     Ok(MiniMaxMappedUsage {
         plan: Some("Token Plan".into()),
@@ -92,7 +94,10 @@ fn quota_from_model(model: &Value, window: Window) -> Result<Option<QuotaWindow>
         )));
     }
     let allowance_percent = if matches!(window, Window::Weekly) {
-        100.0 * number(model.get("weekly_boost_permille")).unwrap_or(1000.0) / 1000.0
+        number(model.get("weekly_boost_permille"))
+            .map(|boost| boost / 10.0)
+            .filter(|allowance| *allowance > 0.0)
+            .unwrap_or(100.0)
     } else {
         100.0
     };
@@ -243,6 +248,44 @@ mod tests {
             .find(|quota| quota.id == "weekly")
             .unwrap();
         assert_eq!(weekly.used_percent, 0.0);
+    }
+
+    #[test]
+    fn missing_weekly_window_keeps_the_session_quota() {
+        let mut body = captured();
+        let model = body["model_remains"][0].as_object_mut().unwrap();
+        for field in [
+            "current_weekly_status",
+            "current_weekly_remaining_percent",
+            "weekly_boost_permille",
+        ] {
+            model.remove(field);
+        }
+        let mapped = map_usage(&body).unwrap();
+        assert_eq!(
+            mapped
+                .quotas
+                .iter()
+                .map(|quota| quota.id.as_str())
+                .collect::<Vec<_>>(),
+            ["session"]
+        );
+    }
+
+    #[test]
+    fn zero_weekly_boost_uses_the_base_allowance() {
+        let mut body = captured();
+        body["model_remains"][0]["current_weekly_status"] = json!(2);
+        body["model_remains"][0]["weekly_boost_permille"] = json!(0);
+        body["model_remains"][0]["current_weekly_remaining_percent"] = json!(50);
+        let mapped = map_usage(&body).unwrap();
+        let weekly = mapped
+            .quotas
+            .iter()
+            .find(|quota| quota.id == "weekly")
+            .unwrap();
+        assert_eq!(weekly.used_percent, 50.0);
+        assert!(weekly.used_percent.is_finite());
     }
 
     #[test]
