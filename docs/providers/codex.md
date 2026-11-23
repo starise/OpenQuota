@@ -27,5 +27,6 @@ Codex usage recorded by pi can also be included. OpenQuota does not upload these
 
 - **Not logged in** — run `codex`, sign in with ChatGPT, then refresh OpenQuota.
 - **Subscription usage unavailable** — replace an API-key-only login with a ChatGPT login.
-- **Session expired or revoked** — sign in again with `codex`.
+- **Session expired or revoked** — open Codex to renew the login, then refresh OpenQuota.
+  If Codex asks you to sign in again, complete sign-in there. Codex manages renewal of the shared login.
 - **No local history** — check the active Codex data directory and the value of `CODEX_HOME`.

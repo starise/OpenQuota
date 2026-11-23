@@ -134,20 +134,12 @@ pub enum CodexError {
         "Subscription usage is unavailable for API-key-only logins. Sign in to Codex with ChatGPT."
     )]
     ApiKeyOnly,
-    #[error("Your Codex session expired. Run `codex` to sign in again.")]
-    SessionExpired,
-    #[error("Codex credentials changed while refreshing. Run `codex` to sign in again.")]
-    TokenConflict,
-    #[error("Your Codex session was revoked. Run `codex` to sign in again.")]
-    TokenRevoked,
-    #[error("Your Codex access token expired. Run `codex` to sign in again.")]
+    #[error("Open Codex to renew your session, then refresh OpenQuota.")]
     TokenExpired,
     #[error("Codex auth data is invalid. Run `codex` to sign in again.")]
     InvalidAuth,
     #[error("The Codex account changed while usage was refreshing. Refresh again.")]
     AccountChanged,
-    #[error("Refreshed Codex credentials could not be saved.")]
-    AuthWrite,
     #[error("Codex usage request failed (HTTP {0}).")]
     RequestFailed(u16),
     #[error("Codex returned an invalid usage response.")]
@@ -207,12 +199,7 @@ impl CodexProvider {
                 .map(|identity| account_identity_key(&identity));
             match self.refresh_candidate(&mut auth, now, identity.as_deref()) {
                 Ok(snapshot) => return Ok((snapshot, identity)),
-                Err(
-                    error @ (CodexError::SessionExpired
-                    | CodexError::TokenConflict
-                    | CodexError::TokenRevoked
-                    | CodexError::TokenExpired),
-                ) => last_auth_error = Some(error),
+                Err(error @ CodexError::TokenExpired) => last_auth_error = Some(error),
                 Err(error) => return Err(error),
             }
         }
@@ -247,17 +234,6 @@ impl CodexProvider {
 
         Self::ensure_candidate_identity(auth, account_identity)?;
 
-        if auth.needs_refresh(now) {
-            if let Ok(live) = auth.reload() {
-                Self::ensure_candidate_identity(&live, account_identity)?;
-                *auth = live;
-            }
-        }
-        if auth.needs_refresh(now) {
-            self.refresh_access_token(auth, now, &mut warnings)?;
-            Self::ensure_candidate_identity(auth, account_identity)?;
-        }
-
         let mut response = self
             .client
             .fetch_usage(&auth.access_token, auth.account_id.as_deref())?;
@@ -265,11 +241,14 @@ impl CodexProvider {
             response.status,
             StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
         ) {
-            self.refresh_access_token(auth, now, &mut warnings)?;
-            Self::ensure_candidate_identity(auth, account_identity)?;
-            response = self
-                .client
-                .fetch_usage(&auth.access_token, auth.account_id.as_deref())?;
+            let latest = auth.reload().map_err(|_| CodexError::AccountChanged)?;
+            Self::ensure_candidate_identity(&latest, account_identity)?;
+            if latest.access_token != auth.access_token {
+                *auth = latest;
+                response = self
+                    .client
+                    .fetch_usage(&auth.access_token, auth.account_id.as_deref())?;
+            }
         }
         let reset_credits = if response.status.is_success() {
             self.client
@@ -303,39 +282,6 @@ impl CodexProvider {
             refreshed_at: now,
         })
     }
-
-    fn refresh_access_token(
-        &self,
-        auth: &mut CodexAuthState,
-        now: chrono::DateTime<Utc>,
-        warnings: &mut Vec<String>,
-    ) -> Result<(), CodexError> {
-        let refresh_token = auth
-            .refresh_token
-            .as_deref()
-            .filter(|value| !value.is_empty())
-            .ok_or(CodexError::TokenExpired)?;
-        let refreshed = self.client.refresh_token(refresh_token)?;
-        if let Err(error) = auth.update_and_save_if_current(
-            refreshed.access_token,
-            refreshed.refresh_token,
-            refreshed.id_token,
-            now,
-        ) {
-            if matches!(error, CodexError::AccountChanged) {
-                return Err(error);
-            }
-            crate::app_error!(
-                "auth:codex",
-                "failed to persist rotated credentials; using them for this session only"
-            );
-            warnings.push(
-                "The refreshed Codex login is active for this session but could not be saved."
-                    .into(),
-            );
-        }
-        Ok(())
-    }
 }
 
 fn account_identity_key(identity: &str) -> String {
@@ -356,14 +302,10 @@ fn provider_error(error: CodexError) -> crate::providers::ProviderError {
 
     let kind = match error {
         CodexError::NotLoggedIn
-        | CodexError::SessionExpired
-        | CodexError::TokenConflict
-        | CodexError::TokenRevoked
         | CodexError::TokenExpired
         | CodexError::InvalidAuth
         | CodexError::AccountChanged => Kind::Authentication,
         CodexError::ApiKeyOnly => Kind::Permission,
-        CodexError::AuthWrite => Kind::CredentialStorage,
         CodexError::RequestFailed(429) => Kind::RateLimited,
         CodexError::RequestFailed(_) | CodexError::ConnectionFailed => Kind::Network,
         CodexError::InvalidResponse => Kind::InvalidResponse,
@@ -419,16 +361,114 @@ impl crate::providers::UsageProvider for CodexProvider {
 
 #[cfg(test)]
 mod account_tests {
-    use std::sync::Arc;
+    use std::{
+        fs,
+        io::{BufRead, BufReader, Write},
+        net::TcpListener,
+        sync::Arc,
+        thread,
+        time::Duration,
+    };
 
     use tempfile::tempdir;
 
     use super::{validate_account_identity, CodexClient, CodexError, CodexProvider};
     use crate::{
         pricing::PricingStore,
-        providers::{CacheIdentity, UsageProvider},
+        providers::{test_http::serve_once, CacheIdentity, UsageProvider},
         storage::Storage,
     };
+
+    #[test]
+    fn quota_refresh_leaves_shared_credentials_to_codex() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("auth.json");
+        let original = r#"{"last_refresh":"2025-01-01T00:00:00Z","tokens":{"access_token":"saved-access","refresh_token":"shared-refresh"}}"#;
+        fs::write(&path, original).unwrap();
+        let mut auth = super::auth::load_from_path(&path).unwrap();
+        let usage = serve_once(
+            200,
+            &[],
+            r#"{"rate_limit":{"primary_window":{"used_percent":10,"reset_after_seconds":60}}}"#,
+        );
+        let resets = serve_once(200, &[], "{}");
+        let provider = CodexProvider {
+            account_identity: None,
+            storage: Arc::new(Storage::open(&directory.path().join("openquota.db")).unwrap()),
+            pricing: Arc::new(PricingStore::new(directory.path().join("pricing")).unwrap()),
+            client: CodexClient::with_endpoints(&usage, &resets, &resets, Duration::from_secs(2))
+                .unwrap(),
+        };
+
+        let snapshot = provider
+            .refresh_candidate(&mut auth, chrono::Utc::now(), None)
+            .unwrap();
+
+        assert_eq!(snapshot.quotas[0].used_percent, 10.0);
+        assert_eq!(fs::read_to_string(path).unwrap(), original);
+    }
+
+    #[test]
+    fn rejected_access_token_retries_with_the_login_published_by_codex() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("auth.json");
+        let original = r#"{"tokens":{"access_token":"old-access","account_id":"login-a"}}"#;
+        let replacement = r#"{"tokens":{"access_token":"new-access","account_id":"login-a"}}"#;
+        fs::write(&path, original).unwrap();
+        let mut auth = super::auth::load_from_path(&path).unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let usage = format!("http://{}", listener.local_addr().unwrap());
+        let server_path = path.clone();
+        let server = thread::spawn(move || {
+            for (token, status, body) in [
+                ("old-access", "401 Unauthorized", "{}"),
+                (
+                    "new-access",
+                    "200 OK",
+                    r#"{"rate_limit":{"primary_window":{"used_percent":25,"reset_after_seconds":60}}}"#,
+                ),
+            ] {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let headers: Vec<_> = BufReader::new(&stream)
+                    .lines()
+                    .map(Result::unwrap)
+                    .take_while(|line| !line.is_empty())
+                    .collect();
+                assert!(headers.iter().any(
+                    |line| line.eq_ignore_ascii_case(&format!("Authorization: Bearer {token}"))
+                ));
+                if token == "old-access" {
+                    fs::write(&server_path, replacement).unwrap();
+                }
+                write!(
+                    stream,
+                    "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .unwrap();
+            }
+        });
+        let resets = serve_once(200, &[], "{}");
+        let provider = CodexProvider {
+            account_identity: None,
+            storage: Arc::new(Storage::open(&directory.path().join("openquota.db")).unwrap()),
+            pricing: Arc::new(PricingStore::new(directory.path().join("pricing")).unwrap()),
+            client: CodexClient::with_endpoints(&usage, &resets, &resets, Duration::from_secs(2))
+                .unwrap(),
+        };
+
+        let identity = super::account_identity_key("login-a");
+        let snapshot = provider
+            .refresh_candidate(&mut auth, chrono::Utc::now(), Some(&identity))
+            .unwrap();
+
+        server.join().unwrap();
+        assert_eq!(snapshot.quotas[0].used_percent, 25.0);
+        assert_eq!(fs::read_to_string(path).unwrap(), replacement);
+    }
 
     #[test]
     fn pinned_account_rejects_a_different_or_unreadable_login() {
