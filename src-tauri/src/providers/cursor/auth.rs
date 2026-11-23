@@ -20,6 +20,7 @@ const REFRESH_BUFFER_MINUTES: i64 = 5;
 pub enum CursorAuthSource {
     Sqlite(PathBuf),
     Keychain { account: String },
+    CliFile,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,11 +32,33 @@ pub struct CursorAuthState {
 
 impl CursorAuthState {
     pub fn load() -> Result<Option<Self>, CursorError> {
-        let sqlite = state_database_paths()
-            .into_iter()
-            .find_map(|path| load_sqlite_auth(&path));
-        let keychain = load_keychain_auth();
-        Ok(select_auth_state(sqlite, keychain))
+        Ok(Self::load_from_sources(
+            &state_database_paths(),
+            &cli_auth_paths(),
+            load_keychain_auth(),
+        ))
+    }
+
+    fn load_from_sources(
+        databases: &[PathBuf],
+        cli_files: &[PathBuf],
+        keychain: Option<Self>,
+    ) -> Option<Self> {
+        let sqlite = databases.iter().find_map(|path| load_sqlite_auth(path));
+        let existing = select_auth_state(sqlite, keychain);
+        let cli = cli_files.iter().find_map(|path| load_cli_auth(path));
+        match (existing, cli) {
+            (Some(current), Some(cli)) if cli.is_newer_session_for(&current) => Some(cli),
+            (current, cli) => current.or(cli),
+        }
+    }
+
+    fn is_newer_session_for(&self, current: &Self) -> bool {
+        let access = self.access_token.as_deref();
+        let current_access = current.access_token.as_deref();
+        token_subject(access).is_some_and(|subject| {
+            token_subject(current_access).as_deref() == Some(subject.as_str())
+        }) && access.and_then(token_expiration) > current_access.and_then(token_expiration)
     }
 
     pub fn has_local_credentials() -> bool {
@@ -58,10 +81,49 @@ impl CursorAuthState {
                 write_generic_password(ACCESS_TOKEN_SERVICE, account, access_token.as_bytes())
                     .map_err(|_| CursorError::AuthWrite)
             }
+            CursorAuthSource::CliFile => return Err(CursorError::AuthWrite),
         }?;
         self.access_token = Some(access_token);
         Ok(())
     }
+}
+
+fn load_cli_auth(path: &Path) -> Option<CursorAuthState> {
+    let contents = std::fs::read(path).ok()?;
+    let json: Value = serde_json::from_slice(&contents).ok()?;
+    let access_token = non_empty(json.get("accessToken")?.as_str()?)?;
+    token_subject(Some(&access_token))?;
+    Some(CursorAuthState {
+        access_token: Some(access_token),
+        refresh_token: None,
+        source: CursorAuthSource::CliFile,
+    })
+}
+
+fn cli_auth_paths() -> Vec<PathBuf> {
+    if cfg!(target_os = "windows") {
+        return std::env::var_os("APPDATA")
+            .map(|path| PathBuf::from(path).join("Cursor/auth.json"))
+            .into_iter()
+            .collect();
+    }
+    let home = std::env::var_os("HOME")
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from);
+    let mut paths = Vec::new();
+    if cfg!(target_os = "linux") {
+        if let Some(config) = std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .or_else(|| home.as_ref().map(|path| path.join(".config")))
+        {
+            paths.push(config.join("cursor/auth.json"));
+        }
+    }
+    if let Some(home) = home {
+        paths.push(home.join(".cursor/auth.json"));
+    }
+    paths
 }
 
 fn select_auth_state(
@@ -316,5 +378,69 @@ mod tests {
         assert!(auth.needs_refresh(now));
         auth.access_token = Some(jwt("auth0|user", (now + Duration::minutes(6)).timestamp()));
         assert!(!auth.needs_refresh(now));
+    }
+
+    #[test]
+    fn renewed_agent_login_is_used_for_the_same_account() {
+        let directory = tempdir().unwrap();
+        let database = directory.path().join("state.vscdb");
+        let cli_file = directory.path().join("auth.json");
+        let now = Utc.with_ymd_and_hms(2026, 7, 15, 12, 0, 0).unwrap();
+        let old = jwt("auth0|enterprise", (now - Duration::hours(1)).timestamp());
+        let renewed = jwt("auth0|enterprise", (now + Duration::hours(1)).timestamp());
+        let connection = Connection::open(&database).unwrap();
+        connection
+            .execute_batch("CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value TEXT);")
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO ItemTable VALUES (?1, ?2)",
+                (ACCESS_TOKEN_KEY, &old),
+            )
+            .unwrap();
+        let contents = serde_json::json!({"accessToken": renewed, "refreshToken": "cli-refresh"});
+        std::fs::write(&cli_file, contents.to_string()).unwrap();
+
+        let auth =
+            CursorAuthState::load_from_sources(&[database], std::slice::from_ref(&cli_file), None)
+                .unwrap();
+
+        assert_eq!(auth.access_token.as_deref(), Some(renewed.as_str()));
+        assert!(!auth.needs_refresh(now));
+        assert!(auth.refresh_token.is_none());
+        assert_eq!(
+            std::fs::read_to_string(cli_file).unwrap(),
+            contents.to_string()
+        );
+    }
+
+    #[test]
+    fn agent_login_does_not_replace_a_different_desktop_account() {
+        let directory = tempdir().unwrap();
+        let cli_file = directory.path().join("auth.json");
+        let current = jwt("auth0|desktop", 100);
+        let agent = jwt("auth0|agent", 200);
+        std::fs::write(
+            &cli_file,
+            serde_json::json!({"accessToken": agent}).to_string(),
+        )
+        .unwrap();
+        let keychain = state(
+            CursorAuthSource::Keychain {
+                account: String::new(),
+            },
+            &current,
+        );
+
+        let auth = CursorAuthState::load_from_sources(
+            &[],
+            std::slice::from_ref(&cli_file),
+            Some(keychain),
+        )
+        .unwrap();
+        assert_eq!(auth.access_token.as_deref(), Some(current.as_str()));
+
+        let cli_only = CursorAuthState::load_from_sources(&[], &[cli_file], None).unwrap();
+        assert_eq!(cli_only.access_token.as_deref(), Some(agent.as_str()));
     }
 }
