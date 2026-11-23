@@ -1,13 +1,18 @@
 # Kimi
 
-OpenQuota tracks the Session (rolling five-hour) and Weekly quotas of a Kimi Code membership.
+OpenQuota tracks the Session (rolling five-hour) and Monthly quotas of a Kimi Code membership. It
+also keeps the legacy Weekly metric when Kimi includes that pool in the response.
 
 ## What it tracks
 
-| Metric  | Meaning                                      |
-| ------- | -------------------------------------------- |
-| Session | Usage remaining in the rolling 5-hour window |
-| Weekly  | Usage remaining in the rolling 7-day window  |
+| Metric  | Meaning                                                |
+| ------- | ------------------------------------------------------ |
+| Session | Usage remaining in the rolling 5-hour window           |
+| Monthly | Usage remaining in the monthly total pool              |
+| Weekly  | Legacy rolling 7-day pool, when Kimi reports the value |
+
+Weekly is available in the on-demand metrics. Older Kimi responses may still include it; newer
+responses that omit it do not produce a Weekly quota.
 
 ## Setup
 

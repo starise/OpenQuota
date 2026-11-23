@@ -44,13 +44,23 @@ pub(crate) fn definition() -> ProviderDefinition {
                 "S",
             ),
             MetricDefinition::quota(
+                "kimi.monthly",
+                "Monthly",
+                "monthly",
+                false,
+                true,
+                MetricSection::AlwaysVisible,
+                true,
+                "M",
+            ),
+            MetricDefinition::quota(
                 "kimi.weekly",
                 "Weekly",
                 "weekly",
                 false,
                 true,
-                MetricSection::AlwaysVisible,
-                true,
+                MetricSection::OnDemand,
+                false,
                 "W",
             ),
         ],
@@ -323,5 +333,36 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["Dashboard", "API Keys"]
         );
+        assert_eq!(
+            definition
+                .metrics
+                .iter()
+                .map(|metric| metric.id.as_str())
+                .collect::<Vec<_>>(),
+            ["kimi.session", "kimi.monthly", "kimi.weekly"]
+        );
+        let monthly = definition
+            .metrics
+            .iter()
+            .find(|metric| metric.id == "kimi.monthly")
+            .unwrap();
+        assert_eq!(
+            monthly.default_section,
+            crate::models::MetricSection::AlwaysVisible
+        );
+        assert!(monthly.default_enabled);
+        assert!(monthly.default_pinned);
+
+        let weekly = definition
+            .metrics
+            .iter()
+            .find(|metric| metric.id == "kimi.weekly")
+            .unwrap();
+        assert_eq!(
+            weekly.default_section,
+            crate::models::MetricSection::OnDemand
+        );
+        assert!(weekly.default_enabled);
+        assert!(!weekly.default_pinned);
     }
 }
