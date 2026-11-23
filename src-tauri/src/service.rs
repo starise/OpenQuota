@@ -295,8 +295,15 @@ impl ProviderService {
                 if let Ok(mut failures) = self.last_failed_refresh.lock() {
                     failures.remove(&provider_id);
                 }
-            } else if let Ok(mut failures) = self.last_failed_refresh.lock() {
-                failures.insert(provider_id.clone(), Instant::now());
+            } else {
+                if state.error_kind == Some(ProviderErrorKind::Network) {
+                    if let Ok(mut last) = self.last_live_refresh.lock() {
+                        last.remove(&provider_id);
+                    }
+                }
+                if let Ok(mut failures) = self.last_failed_refresh.lock() {
+                    failures.insert(provider_id.clone(), Instant::now());
+                }
             }
 
             let run_follow_up = if let Some(worker) = late_worker {
@@ -1593,23 +1600,32 @@ mod tests {
     fn successful_retry_clears_failure_backoff() {
         let directory = tempdir().unwrap();
         let storage = Arc::new(Storage::open(&directory.path().join("openquota.db")).unwrap());
-        let calls = Arc::new(AtomicUsize::new(0));
         let provider = Arc::new(SequenceProvider {
             id: "recovering",
-            calls,
+            calls: Arc::new(AtomicUsize::new(0)),
             failures_before_success: 1,
         }) as Arc<dyn UsageProvider>;
         let registry = Arc::new(ProviderRegistry::new(vec![provider]).unwrap());
         let service = Arc::new(ProviderService::new(registry, storage));
 
-        tauri::async_runtime::block_on(service.refresh("recovering", false));
+        service
+            .last_live_refresh
+            .lock()
+            .unwrap()
+            .insert("recovering".into(), std::time::Instant::now());
+        let failed = tauri::async_runtime::block_on(service.refresh("recovering", true));
+        assert_eq!(failed.error_kind, Some(ProviderErrorKind::Network));
         assert!(service
             .last_failed_refresh
             .lock()
             .unwrap()
             .contains_key("recovering"));
 
-        let recovered = tauri::async_runtime::block_on(service.refresh("recovering", true));
+        service.last_failed_refresh.lock().unwrap().insert(
+            "recovering".into(),
+            std::time::Instant::now() - FAILURE_RETRY_BACKOFF,
+        );
+        let recovered = tauri::async_runtime::block_on(service.refresh("recovering", false));
         assert!(recovered.error.is_none());
         assert!(!service
             .last_failed_refresh
