@@ -420,7 +420,7 @@ mod tests {
         }
 
         let service = format!(
-            "io.github.deviffyy.openquota.credential-test.{}",
+            "com.andreabrandi.openquota.credential-test.{}",
             std::process::id()
         );
         let account = "round-trip";
