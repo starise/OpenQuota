@@ -5,6 +5,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use tempfile::NamedTempFile;
 
@@ -29,12 +30,16 @@ pub struct ClaudeOAuth {
     pub subscription_type: Option<String>,
     pub rate_limit_tier: Option<String>,
     pub scopes: Option<Vec<String>>,
+    #[serde(flatten)]
+    pub(super) extra: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 struct ClaudeCredentialsFile {
     claude_ai_oauth: Option<ClaudeOAuth>,
+    #[serde(flatten)]
+    extra: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -576,8 +581,8 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        has_desktop_app_material_at, load_candidates_with_environment, parse_credentials,
-        write_private_file_atomic, ClaudeCredential, ClaudeCredentialGeneration,
+        has_desktop_app_material_at, load_candidates_with_environment, parse_candidate,
+        parse_credentials, write_private_file_atomic, ClaudeCredential, ClaudeCredentialGeneration,
         ClaudeCredentialScope, ClaudeCredentialsFile, ClaudeOAuth, CredentialSource,
     };
     use crate::providers::claude::ClaudeError;
@@ -625,6 +630,43 @@ mod tests {
 
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].access_token(), Some("first-token"));
+    }
+
+    #[test]
+    fn credential_refresh_preserves_unrelated_document_fields() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join(".credentials.json");
+        let original = serde_json::json!({
+            "claudeAiOauth": {"accessToken": "old-access", "futureField": ["keep"]},
+            "mcpOAuth": {"test-server": {"session": "keep"}}
+        });
+        fs::write(&path, original.to_string()).unwrap();
+        let mut credential = parse_candidate(
+            &fs::read(&path).unwrap(),
+            CredentialSource::File(path.clone()),
+            false,
+        )
+        .unwrap();
+        let generation = ClaudeCredentialGeneration::from_candidates(&[credential.clone()]);
+
+        credential
+            .update_and_save_with_generation(
+                "new-access".into(),
+                None,
+                None,
+                0,
+                &generation,
+                || generation.clone(),
+            )
+            .unwrap();
+
+        let saved: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        assert_eq!(saved["claudeAiOauth"]["accessToken"], "new-access");
+        assert_eq!(
+            saved["claudeAiOauth"]["futureField"],
+            original["claudeAiOauth"]["futureField"]
+        );
+        assert_eq!(saved["mcpOAuth"], original["mcpOAuth"]);
     }
 
     #[test]
@@ -719,6 +761,7 @@ mod tests {
                 subscription_type: Some("pro".into()),
                 rate_limit_tier: Some("tier-a".into()),
                 scopes: Some(vec!["user:profile".into()]),
+                ..ClaudeOAuth::default()
             },
             source,
             document: ClaudeCredentialsFile::default(),
