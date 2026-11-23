@@ -104,7 +104,7 @@ export const providerCatalog: ProviderCatalog = {
       localUsageSourceNote: 'From your Codex logs (estimated)',
       links: [
         { label: 'Status', url: 'https://status.openai.com/' },
-        { label: 'Dashboard', url: 'https://chatgpt.com/codex/settings/usage' },
+        { label: 'Dashboard', url: 'https://chatgpt.com/settings/usage?tab=overview' },
       ],
       metrics: [
         quota('codex.session', 'Session', 'session'),

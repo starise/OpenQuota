@@ -23,7 +23,7 @@ describe('provider catalog index', () => {
     expect(catalog.localUsageSourceNote('codex')).toBe('From your Codex logs (estimated)');
     expect(catalog.provider('codex')?.links).toEqual([
       { label: 'Status', url: 'https://status.openai.com/' },
-      { label: 'Dashboard', url: 'https://chatgpt.com/codex/settings/usage' },
+      { label: 'Dashboard', url: 'https://chatgpt.com/settings/usage?tab=overview' },
     ]);
   });
 

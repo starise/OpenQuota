@@ -222,7 +222,7 @@ mod tests {
                 ("Status".into(), "https://status.openai.com/".into()),
                 (
                     "Dashboard".into(),
-                    "https://chatgpt.com/codex/settings/usage".into()
+                    "https://chatgpt.com/settings/usage?tab=overview".into()
                 ),
             ]
         );

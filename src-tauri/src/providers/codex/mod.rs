@@ -34,7 +34,10 @@ pub(crate) fn definition() -> ProviderDefinition {
         local_usage_source_note: Some("From your Codex logs (estimated)".into()),
         links: vec![
             ProviderLink::new("Status", "https://status.openai.com/"),
-            ProviderLink::new("Dashboard", "https://chatgpt.com/codex/settings/usage"),
+            ProviderLink::new(
+                "Dashboard",
+                "https://chatgpt.com/settings/usage?tab=overview",
+            ),
         ],
         metrics: vec![
             MetricDefinition::quota(
