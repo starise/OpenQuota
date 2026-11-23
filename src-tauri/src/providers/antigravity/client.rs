@@ -27,6 +27,7 @@ pub struct AntigravityClient {
 pub enum CloudOutcome {
     Ok(Value),
     AuthFailed,
+    QuotaAccessDenied,
     Unavailable,
 }
 
@@ -162,16 +163,28 @@ impl AntigravityClient {
                 "antigravity cloud request HTTP {}",
                 response.status().as_u16()
             );
-            if matches!(
-                response.status(),
-                StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
-            ) {
-                return CloudOutcome::AuthFailed;
-            }
-            if response.status().is_success() {
-                if let Ok(body) = response.json() {
-                    return CloudOutcome::Ok(body);
+            match response.status() {
+                StatusCode::UNAUTHORIZED => return CloudOutcome::AuthFailed,
+                StatusCode::FORBIDDEN => {
+                    let subscription_required = response.json::<Value>().is_ok_and(|body| {
+                        body["error"]["details"].as_array().is_some_and(|details| {
+                            details
+                                .iter()
+                                .any(|detail| detail["reason"] == "SUBSCRIPTION_REQUIRED")
+                        })
+                    });
+                    return if subscription_required {
+                        CloudOutcome::QuotaAccessDenied
+                    } else {
+                        CloudOutcome::AuthFailed
+                    };
                 }
+                status if status.is_success() => {
+                    if let Ok(body) = response.json() {
+                        return CloudOutcome::Ok(body);
+                    }
+                }
+                _ => {}
             }
         }
         CloudOutcome::Unavailable
@@ -238,7 +251,9 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{AntigravityClient, CloudOutcome, CloudUserAgent, RefreshOutcome};
+    use super::{
+        AntigravityClient, AntigravityError, CloudOutcome, CloudUserAgent, RefreshOutcome,
+    };
     use crate::providers::test_http;
 
     fn client(base: &str) -> AntigravityClient {
@@ -275,6 +290,24 @@ mod tests {
                 CloudOutcome::AuthFailed
             ));
         }
+    }
+
+    #[test]
+    fn quota_subscription_denial_is_reported_as_permission_error() {
+        let base = test_http::serve_once(
+            403,
+            &[],
+            r#"{"error":{"status":"PERMISSION_DENIED","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"SUBSCRIPTION_REQUIRED"}]}}"#,
+        );
+        let temp = tempfile::tempdir().unwrap();
+        let provider = super::super::AntigravityProvider {
+            client: client(&base),
+            access_token_cache: super::super::AccessTokenCache::new(temp.path().join("auth.json")),
+        };
+
+        let error = provider.fetch_remote("test-token").unwrap_err();
+        assert!(matches!(error, AntigravityError::QuotaAccessDenied));
+        assert!(error.to_string().contains("/usage"));
     }
 
     #[test]

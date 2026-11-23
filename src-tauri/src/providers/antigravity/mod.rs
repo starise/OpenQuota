@@ -87,6 +87,8 @@ pub enum AntigravityError {
     NotSignedIn,
     #[error("Antigravity sign-in expired. Open Antigravity or run `agy` to refresh.")]
     AuthExpired,
+    #[error("Google denied access to Antigravity quotas from OpenQuota. Run `/usage` in `agy` to view your limits.")]
+    QuotaAccessDenied,
     #[error("Antigravity credentials could not be read from secure storage.")]
     CredentialStoreUnreadable,
     #[error("Antigravity credentials are invalid. Sign in again in Antigravity or `agy`.")]
@@ -224,6 +226,7 @@ impl AntigravityProvider {
                 }
             }
             CloudOutcome::AuthFailed => return Err(AntigravityError::AuthExpired),
+            CloudOutcome::QuotaAccessDenied => return Err(AntigravityError::QuotaAccessDenied),
             CloudOutcome::Unavailable => {}
         }
 
@@ -240,6 +243,7 @@ impl AntigravityProvider {
                 }
             }
             CloudOutcome::AuthFailed => return Err(AntigravityError::AuthExpired),
+            CloudOutcome::QuotaAccessDenied => return Err(AntigravityError::QuotaAccessDenied),
             CloudOutcome::Unavailable => {}
         }
 
@@ -258,6 +262,7 @@ impl AntigravityProvider {
                     .map(str::to_owned),
             ),
             CloudOutcome::AuthFailed => return Err(AntigravityError::AuthExpired),
+            CloudOutcome::QuotaAccessDenied => return Err(AntigravityError::QuotaAccessDenied),
             CloudOutcome::Unavailable => (None, None),
         };
 
@@ -281,6 +286,7 @@ impl AntigravityProvider {
                 }
             }
             CloudOutcome::AuthFailed => return Err(AntigravityError::AuthExpired),
+            CloudOutcome::QuotaAccessDenied => return Err(AntigravityError::QuotaAccessDenied),
             CloudOutcome::Unavailable => {}
         }
         Err(AntigravityError::Unavailable)
@@ -402,6 +408,7 @@ impl crate::providers::UsageProvider for AntigravityProvider {
                 AntigravityError::NotSignedIn
                 | AntigravityError::AuthExpired
                 | AntigravityError::InvalidCredentialData => Kind::Authentication,
+                AntigravityError::QuotaAccessDenied => Kind::Permission,
                 AntigravityError::CredentialStoreUnreadable => Kind::CredentialStorage,
                 AntigravityError::Unavailable => Kind::Network,
             };
