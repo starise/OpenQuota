@@ -21,9 +21,10 @@ the OpenCode data directory.
 
 ## Sign-in and local data
 
-Sign in to OpenCode Go or use OpenCode locally first. OpenQuota reads OpenCode's local authentication
-file and databases from its data directory. `OPENCODE_DATA_DIR` and `XDG_DATA_HOME` are respected
-when present.
+Sign in to OpenCode Go or use OpenCode locally first. OpenQuota reads the Go key from OpenCode's
+database after the v2 credential migration or from `auth.json` before the migration. It reads
+local session history from the same data directory. `OPENCODE_DATA_DIR` and `XDG_DATA_HOME` are
+respected when present.
 
 ## Troubleshooting
 

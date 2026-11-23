@@ -104,7 +104,7 @@ fn hosted_cost_sql(has_parts: bool) -> String {
     )
 }
 
-fn open_read_only(path: &Path) -> Result<Connection, ()> {
+pub(super) fn open_read_only(path: &Path) -> Result<Connection, ()> {
     let connection = Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,

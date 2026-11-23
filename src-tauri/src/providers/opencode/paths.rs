@@ -5,12 +5,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use rusqlite::OptionalExtension;
 use serde_json::Value;
 use zeroize::{Zeroize, Zeroizing};
 
-use super::OpenCodeError;
+use super::{database::open_read_only, OpenCodeError};
 
 const MAX_AUTH_FILE_BYTES: u64 = 1024 * 1024;
+const LEGACY_CREDENTIAL_MIGRATION: &str = "20260805200742_import_legacy_credentials";
 
 #[derive(Debug, Clone)]
 pub(crate) struct OpenCodePaths {
@@ -34,6 +36,47 @@ impl OpenCodePaths {
     }
 
     pub(crate) fn go_api_key(&self) -> Result<Option<Zeroizing<String>>, OpenCodeError> {
+        let mut imported = false;
+        for path in self.database_files()? {
+            let Ok(mut database) = open_read_only(&path) else {
+                continue;
+            };
+            let Ok(transaction) = database.transaction() else {
+                continue;
+            };
+            let migrated = transaction.query_row(
+                "SELECT EXISTS (SELECT 1 FROM migration WHERE id = ?1)",
+                [LEGACY_CREDENTIAL_MIGRATION],
+                |row| row.get::<_, bool>(0),
+            );
+            if !matches!(migrated, Ok(true)) {
+                continue;
+            }
+            imported = true;
+            let key = transaction
+                .query_row(
+                    "SELECT trim(json_extract(value, '$.key')) FROM credential
+                     WHERE integration_id = 'opencode-go' AND (active IS NULL OR active = 1)
+                       AND json_extract(value, '$.type') = 'key'
+                       AND json_type(value, '$.key') = 'text'
+                       AND trim(json_extract(value, '$.key')) <> ''
+                     ORDER BY active DESC, time_updated DESC, id DESC LIMIT 1",
+                    [],
+                    |row| row.get::<_, String>(0).map(Zeroizing::new),
+                )
+                .optional()
+                .map_err(|_| OpenCodeError::CredentialsUnreadable)?;
+            if key.is_some() {
+                return Ok(key);
+            }
+        }
+        if imported {
+            return Ok(None);
+        }
+        self.legacy_go_api_key()
+    }
+
+    fn legacy_go_api_key(&self) -> Result<Option<Zeroizing<String>>, OpenCodeError> {
         let path = self.data_directory.join("auth.json");
         let file = match fs::File::open(path) {
             Ok(file) => file,
@@ -142,12 +185,54 @@ fn non_empty(value: String) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, fs};
+    use std::{collections::HashMap, fs, path::Path};
 
+    use rusqlite::Connection;
     use tempfile::tempdir;
 
     use super::{data_directory, database_files, OpenCodePaths, MAX_AUTH_FILE_BYTES};
     use crate::providers::opencode::OpenCodeError;
+
+    fn create_migrated_database(path: &Path) -> Connection {
+        let connection = Connection::open(path).unwrap();
+        connection
+            .execute(
+                "CREATE TABLE migration (id TEXT PRIMARY KEY, time_completed INTEGER NOT NULL)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO migration VALUES ('20260805200742_import_legacy_credentials', 1)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "CREATE TABLE credential (
+                    id TEXT PRIMARY KEY,
+                    integration_id TEXT,
+                    label TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    connector_id TEXT,
+                    method_id TEXT,
+                    active INTEGER,
+                    time_created INTEGER NOT NULL,
+                    time_updated INTEGER NOT NULL
+                )",
+                [],
+            )
+            .unwrap();
+        connection
+    }
+
+    fn write_legacy_auth(directory: &Path, key: &str) {
+        fs::write(
+            directory.join("auth.json"),
+            serde_json::json!({"opencode-go": {"type": "api", "key": key}}).to_string(),
+        )
+        .unwrap();
+    }
 
     #[test]
     fn data_directory_precedence_and_home_expansion_are_cross_platform() {
@@ -240,6 +325,70 @@ mod tests {
             vec![b' '; MAX_AUTH_FILE_BYTES as usize + 1],
         )
         .unwrap();
+        assert_eq!(
+            paths.go_api_key().unwrap_err(),
+            OpenCodeError::CredentialsUnreadable
+        );
+    }
+
+    #[test]
+    fn migrated_database_key_overrides_legacy_file_and_selects_active_newest_key() {
+        let directory = tempdir().unwrap();
+        write_legacy_auth(directory.path(), "stale-v1-key");
+        let connection = create_migrated_database(&directory.path().join("opencode.db"));
+        connection.execute_batch(r#"
+            INSERT INTO credential (id, integration_id, label, value, active, time_created, time_updated) VALUES
+              ('inactive', 'opencode-go', 'API key', '{"type":"key","key":"inactive-key"}', 0, 1, 100),
+              ('legacy', 'opencode-go', 'API key', '{"type":"key","key":"null-active-key"}', NULL, 1, 300),
+              ('old', 'opencode-go', 'API key', '{"type":"key","key":"old-active-key"}', 1, 1, 10),
+              ('new', 'opencode-go', 'API key', '{"type":"key","key":"current-key"}', 1, 1, 20);
+        "#).unwrap();
+        drop(connection);
+
+        let paths = OpenCodePaths::for_data_directory(directory.path().to_path_buf());
+
+        assert_eq!(paths.go_api_key().unwrap().unwrap().as_str(), "current-key");
+    }
+
+    #[test]
+    fn completed_credential_migration_prevents_legacy_key_revival_when_no_key_exists() {
+        let directory = tempdir().unwrap();
+        write_legacy_auth(directory.path(), "stale-v1-key");
+        drop(create_migrated_database(
+            &directory.path().join("opencode.db"),
+        ));
+
+        let paths = OpenCodePaths::for_data_directory(directory.path().to_path_buf());
+
+        assert!(paths.go_api_key().unwrap().is_none());
+    }
+
+    #[test]
+    fn pre_migration_database_keeps_legacy_auth_fallback() {
+        let directory = tempdir().unwrap();
+        write_legacy_auth(directory.path(), "legacy-key");
+        let connection = create_migrated_database(&directory.path().join("opencode.db"));
+        connection.execute("DELETE FROM migration", []).unwrap();
+        drop(connection);
+
+        let paths = OpenCodePaths::for_data_directory(directory.path().to_path_buf());
+
+        assert_eq!(paths.go_api_key().unwrap().unwrap().as_str(), "legacy-key");
+    }
+
+    #[test]
+    fn unreadable_database_does_not_hide_legacy_auth_and_migrated_schema_errors_are_typed() {
+        let directory = tempdir().unwrap();
+        write_legacy_auth(directory.path(), "legacy-key");
+        fs::write(directory.path().join("opencode.db"), b"not sqlite").unwrap();
+        let paths = OpenCodePaths::for_data_directory(directory.path().to_path_buf());
+        assert_eq!(paths.go_api_key().unwrap().unwrap().as_str(), "legacy-key");
+
+        fs::remove_file(directory.path().join("opencode.db")).unwrap();
+        let connection = create_migrated_database(&directory.path().join("opencode.db"));
+        connection.execute("DROP TABLE credential", []).unwrap();
+        drop(connection);
+
         assert_eq!(
             paths.go_api_key().unwrap_err(),
             OpenCodeError::CredentialsUnreadable
