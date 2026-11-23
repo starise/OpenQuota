@@ -46,17 +46,29 @@ pub fn parse_quota_summary(value: &Value) -> Option<Vec<QuotaWindow>> {
         .filter_map(|group| group.get("buckets").and_then(Value::as_array))
         .flatten()
     {
-        let Some(id) = bucket.get("bucketId").and_then(Value::as_str) else {
+        if bucket.get("disabled").and_then(Value::as_bool) == Some(true) {
+            continue;
+        }
+        let Some(id) = bucket
+            .get("bucketId")
+            .or_else(|| bucket.get("id"))
+            .and_then(Value::as_str)
+        else {
             continue;
         };
         if !BUCKETS.iter().any(|spec| spec.0 == id) || found.contains_key(id) {
             continue;
         }
-        let Some(fraction) = bucket.get("remainingFraction").and_then(number) else {
+        let Some(fraction) = bucket
+            .get("remainingFraction")
+            .or_else(|| bucket.get("remaining_fraction"))
+            .and_then(number)
+        else {
             continue;
         };
         let reset = bucket
             .get("resetTime")
+            .or_else(|| bucket.get("reset_time"))
             .and_then(Value::as_str)
             .and_then(|text| DateTime::parse_from_rfc3339(text).ok())
             .map(|date| date.to_utc());
@@ -292,6 +304,22 @@ mod tests {
         assert_eq!(quotas[0].id, "geminiPro");
         assert_eq!(quotas[0].used_percent, 20.0);
         assert_eq!(quotas[1].id, "claudeWeekly");
+    }
+
+    #[test]
+    fn maps_weekly_usage_from_the_cli_without_a_session_quota() {
+        let data = json!({"groups": [{"buckets": [
+            {"id": "gemini-5h", "remaining_fraction": 1.0, "disabled": true},
+            {"id": "gemini-weekly", "remaining_fraction": 0.9675, "reset_time": "2026-11-29T18:11:19Z"},
+            {"id": "3p-weekly", "remaining_fraction": 1.0}
+        ]}]});
+        let quotas = parse_quota_summary(&data).unwrap();
+        assert_eq!(quotas.len(), 2);
+        assert_eq!(quotas[0].id, "geminiWeekly");
+        assert_eq!(quotas[0].used_percent, 3.0);
+        assert_eq!(quotas[0].resets_at, "2026-11-29T18:11:19Z".parse().ok());
+        assert_eq!(quotas[1].id, "claudeWeekly");
+        assert_eq!(quotas[1].used_percent, 0.0);
     }
 
     #[test]

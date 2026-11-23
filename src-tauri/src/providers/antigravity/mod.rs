@@ -1,4 +1,5 @@
 mod auth;
+mod cli;
 mod client;
 mod discovery;
 mod mapper;
@@ -116,7 +117,9 @@ impl AntigravityProvider {
                 .client
                 .call_language_server(&server, "RetrieveUserQuotaSummary")
             {
-                if let Some(quotas) = parse_quota_summary(&summary) {
+                if let Some(quotas) =
+                    parse_quota_summary(&summary).filter(|quotas| !quotas.is_empty())
+                {
                     let plan = self
                         .client
                         .call_language_server(&server, "GetUserStatus")
@@ -145,6 +148,10 @@ impl AntigravityProvider {
                     }
                 }
             }
+        }
+
+        if let Some(result) = cli::fetch_quotas() {
+            return result.map(|quotas| snapshot(None, quotas));
         }
 
         let keychain = match load_token()? {

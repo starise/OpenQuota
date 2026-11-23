@@ -15,9 +15,10 @@ Only the pools available to the signed-in account are shown.
 
 ## Sign-in and local data
 
-Sign in through Antigravity or run `agy`. OpenQuota reuses Antigravity's locally stored credentials
-and can also discover a compatible running Antigravity language server. No API key needs to be added
-to OpenQuota.
+Sign in through Antigravity or run `agy`. OpenQuota can read the quota from a compatible running
+Antigravity language server or from the signed-in CLI's `/usage` report. The report requires `agy`
+1.1.11 or later on `PATH` and works with the CLI closed. If neither option is available, OpenQuota
+can reuse Antigravity's locally stored credentials. No API key is required.
 
 ## Troubleshooting
 
