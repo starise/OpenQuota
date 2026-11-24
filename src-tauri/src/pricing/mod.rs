@@ -103,6 +103,10 @@ mod bundled_resource_tests {
         assert_rates("daybreak-blue-latest", [5.0, 6.25, 0.5, 30.0]);
         assert_rates("gpt-5.6-terra-max-fast", [4.0, 5.0, 0.4, 24.0]);
         assert_rates("gpt-5.6-luna-high-fast", [0.4, 0.5, 0.04, 2.4]);
+        assert_rates(
+            "claude-4.6-opus-high-thinking-fast",
+            [30.0, 37.5, 3.0, 150.0],
+        );
         assert_rates("claude-opus-5", [5.0, 6.25, 0.5, 25.0]);
         assert_rates(
             "claude-opus-5[1m]-thinking-max-fast",
