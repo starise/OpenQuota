@@ -1,0 +1,44 @@
+name: Refresh bundled pricing
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+      timezone: 'Europe/Rome'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-bundled-pricing
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Refresh pricing snapshots
+        run: node scripts/update_pricing_snapshots.mjs
+
+      - name: Commit changed snapshots
+        run: |
+          if git diff --quiet -- \
+            src-tauri/resources/pricing_litellm_snapshot.json \
+            src-tauri/resources/pricing_models_dev_snapshot.json; then
+            echo "No pricing changes."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- \
+            src-tauri/resources/pricing_litellm_snapshot.json \
+            src-tauri/resources/pricing_models_dev_snapshot.json
+          git commit -m "chore(pricing): refresh bundled snapshots"
+          git push
