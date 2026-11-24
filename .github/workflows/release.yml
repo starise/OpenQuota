@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ inputs.tag || github.ref_name }}
+  group: release
   cancel-in-progress: false
 
 env:
@@ -26,7 +26,6 @@ jobs:
     outputs:
       release_commit: ${{ steps.trusted_tag.outputs.release_commit }}
       windows_signing: ${{ steps.signing_policy.outputs.windows_signing }}
-      macos_signing: ${{ steps.signing_policy.outputs.macos_signing }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -59,52 +58,27 @@ jobs:
         id: signing_policy
         env:
           ENABLE_WINDOWS_NATIVE_SIGNING: ${{ vars.ENABLE_WINDOWS_NATIVE_SIGNING || 'false' }}
-          ENABLE_MACOS_NATIVE_SIGNING: ${{ vars.ENABLE_MACOS_NATIVE_SIGNING || 'false' }}
         run: |
-          set -euo pipefail
-          normalize_policy() {
-            local name="$1"
-            local value="$2"
-            case "$value" in
-              true | false) printf '%s' "$value" ;;
-              *)
-                echo "::error::$name must be either true or false." >&2
-                return 1
-                ;;
-            esac
-          }
-
-          windows_signing="$(normalize_policy ENABLE_WINDOWS_NATIVE_SIGNING "$ENABLE_WINDOWS_NATIVE_SIGNING")"
-          macos_signing="$(normalize_policy ENABLE_MACOS_NATIVE_SIGNING "$ENABLE_MACOS_NATIVE_SIGNING")"
-          echo "windows_signing=$windows_signing" >> "$GITHUB_OUTPUT"
-          echo "macos_signing=$macos_signing" >> "$GITHUB_OUTPUT"
+          case "$ENABLE_WINDOWS_NATIVE_SIGNING" in
+            true | false) echo "windows_signing=$ENABLE_WINDOWS_NATIVE_SIGNING" >> "$GITHUB_OUTPUT" ;;
+            *) echo '::error::ENABLE_WINDOWS_NATIVE_SIGNING must be either true or false.'; exit 1 ;;
+          esac
 
       - name: Validate release signing credentials
         env:
           WINDOWS_SIGNING_ENABLED: ${{ steps.signing_policy.outputs.windows_signing }}
-          MACOS_SIGNING_ENABLED: ${{ steps.signing_policy.outputs.macos_signing }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           ES_USERNAME: ${{ steps.signing_policy.outputs.windows_signing == 'true' && secrets.ES_USERNAME || '' }}
           ES_PASSWORD: ${{ steps.signing_policy.outputs.windows_signing == 'true' && secrets.ES_PASSWORD || '' }}
           ES_CREDENTIAL_ID: ${{ steps.signing_policy.outputs.windows_signing == 'true' && secrets.ES_CREDENTIAL_ID || '' }}
           ES_TOTP_SECRET: ${{ steps.signing_policy.outputs.windows_signing == 'true' && secrets.ES_TOTP_SECRET || '' }}
           WINDOWS_SIGNER_SUBJECT: ${{ steps.signing_policy.outputs.windows_signing == 'true' && vars.WINDOWS_SIGNER_SUBJECT || '' }}
-          APPLE_CERTIFICATE: ${{ steps.signing_policy.outputs.macos_signing == 'true' && secrets.APPLE_CERTIFICATE || '' }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ steps.signing_policy.outputs.macos_signing == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
-          APPLE_ID: ${{ steps.signing_policy.outputs.macos_signing == 'true' && secrets.APPLE_ID || '' }}
-          APPLE_PASSWORD: ${{ steps.signing_policy.outputs.macos_signing == 'true' && secrets.APPLE_PASSWORD || '' }}
-          APPLE_TEAM_ID: ${{ steps.signing_policy.outputs.macos_signing == 'true' && secrets.APPLE_TEAM_ID || '' }}
         run: |
           required=(TAURI_SIGNING_PRIVATE_KEY)
           if [[ "$WINDOWS_SIGNING_ENABLED" = true ]]; then
             required+=(ES_USERNAME ES_PASSWORD ES_CREDENTIAL_ID ES_TOTP_SECRET WINDOWS_SIGNER_SUBJECT)
           else
             echo '::warning::Windows artifacts will not be Authenticode-signed.'
-          fi
-          if [[ "$MACOS_SIGNING_ENABLED" = true ]]; then
-            required+=(APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID)
-          else
-            echo '::warning::macOS artifacts will use ad-hoc signing and will not be notarized.'
           fi
           for name in "${required[@]}"; do
             test -n "${!name:-}" || {
@@ -185,7 +159,7 @@ jobs:
               --verify-tag \
               --title "OpenQuota ${RELEASE_TAG#v}" \
               --generate-notes \
-              --notes $'OpenQuota desktop release for Windows and Linux on x64/ARM64, plus a macOS Universal build.\n\nAutomatic updates are cryptographically signed. Linux in-app updates are supported by AppImage builds; Debian packages update through the package installer.'
+              --notes $'OpenQuota desktop release for Windows and Linux on x64/ARM64. macOS availability is listed with the downloads.\n\nAutomatic updates are cryptographically signed. Linux in-app updates are supported by AppImage builds; Debian packages update through the package installer.'
           fi
 
           release_id="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json databaseId --jq '.databaseId')"
@@ -226,12 +200,6 @@ jobs:
             windows-signing-args: ''
             rust-targets: aarch64-unknown-linux-gnu
             smoke-artifact-root: src-tauri/target/aarch64-unknown-linux-gnu/release/bundle
-          - name: macOS Universal
-            platform: macos-latest
-            args: --target universal-apple-darwin --bundles app,dmg --config src-tauri/tauri.release.conf.json
-            windows-signing-args: ''
-            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
-            smoke-artifact-root: src-tauri/target/universal-apple-darwin/release/bundle
 
     steps:
       - uses: actions/checkout@v7
@@ -288,39 +256,6 @@ jobs:
           ES_TOTP_SECRET: ${{ secrets.ES_TOTP_SECRET }}
         run: .github/scripts/setup-windows-signing.ps1
 
-      - name: Configure ad-hoc macOS signing
-        if: runner.os == 'macOS' && needs.validate.outputs.macos_signing != 'true'
-        shell: bash
-        run: echo 'APPLE_SIGNING_IDENTITY=-' >> "$GITHUB_ENV"
-
-      - name: Configure native macOS signing
-        if: runner.os == 'macOS' && needs.validate.outputs.macos_signing == 'true'
-        shell: bash
-        env:
-          OPENQUOTA_APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          OPENQUOTA_APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          OPENQUOTA_APPLE_ID: ${{ secrets.APPLE_ID }}
-          OPENQUOTA_APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          OPENQUOTA_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          set -euo pipefail
-          write_env() {
-            local name="$1"
-            local value="$2"
-            local delimiter="OPENQUOTA_$(uuidgen)"
-            {
-              printf '%s<<%s\n' "$name" "$delimiter"
-              printf '%s\n' "$value"
-              printf '%s\n' "$delimiter"
-            } >> "$GITHUB_ENV"
-          }
-
-          write_env APPLE_CERTIFICATE "$OPENQUOTA_APPLE_CERTIFICATE"
-          write_env APPLE_CERTIFICATE_PASSWORD "$OPENQUOTA_APPLE_CERTIFICATE_PASSWORD"
-          write_env APPLE_ID "$OPENQUOTA_APPLE_ID"
-          write_env APPLE_PASSWORD "$OPENQUOTA_APPLE_PASSWORD"
-          write_env APPLE_TEAM_ID "$OPENQUOTA_APPLE_TEAM_ID"
-
       - name: Build and upload platform artifacts
         uses: tauri-apps/tauri-action@v1
         env:
@@ -354,13 +289,143 @@ jobs:
         uses: ./.release-workflow/.github/actions/platform-smoke
         with:
           artifact-root: ${{ matrix.smoke-artifact-root }}
-          release-validation: ${{ (runner.os == 'Linux' || (runner.os == 'Windows' && needs.validate.outputs.windows_signing == 'true') || (runner.os == 'macOS' && needs.validate.outputs.macos_signing == 'true')) && 'true' || 'false' }}
+          release-validation: ${{ (runner.os == 'Linux' || (runner.os == 'Windows' && needs.validate.outputs.windows_signing == 'true')) && 'true' || 'false' }}
           windows-signer-subject: ${{ runner.os == 'Windows' && needs.validate.outputs.windows_signing == 'true' && vars.WINDOWS_SIGNER_SUBJECT || '' }}
-          apple-team-id: ${{ runner.os == 'macOS' && needs.validate.outputs.macos_signing == 'true' && secrets.APPLE_TEAM_ID || '' }}
+
+  build-macos:
+    name: Build and smoke macOS Universal
+    needs: validate
+    runs-on: macos-26
+    timeout-minutes: 60
+    outputs:
+      artifact_id: ${{ steps.macos-package.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.release_commit }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Resolve native macOS signing
+        id: signing
+        env:
+          ENABLE_MACOS_NATIVE_SIGNING: ${{ vars.ENABLE_MACOS_NATIVE_SIGNING || 'false' }}
+        run: |
+          case "$ENABLE_MACOS_NATIVE_SIGNING" in
+            true | false) echo "native=$ENABLE_MACOS_NATIVE_SIGNING" >> "$GITHUB_OUTPUT" ;;
+            *) echo '::error::ENABLE_MACOS_NATIVE_SIGNING must be either true or false.'; exit 1 ;;
+          esac
+
+      - name: Configure ad-hoc macOS signing
+        if: steps.signing.outputs.native != 'true'
+        shell: bash
+        run: echo 'APPLE_SIGNING_IDENTITY=-' >> "$GITHUB_ENV"
+
+      - name: Configure native macOS signing
+        if: steps.signing.outputs.native == 'true'
+        shell: bash
+        env:
+          OPENQUOTA_APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          OPENQUOTA_APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          OPENQUOTA_APPLE_ID: ${{ secrets.APPLE_ID }}
+          OPENQUOTA_APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          OPENQUOTA_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          write_env() {
+            local name="$1"
+            local value="$2"
+            if [[ -z "$value" ]]; then
+              echo "::error::Missing required macOS signing value: $name"
+              return 1
+            fi
+            local delimiter="OPENQUOTA_$(uuidgen)"
+            {
+              printf '%s<<%s\n' "$name" "$delimiter"
+              printf '%s\n' "$value"
+              printf '%s\n' "$delimiter"
+            } >> "$GITHUB_ENV"
+          }
+
+          write_env APPLE_CERTIFICATE "$OPENQUOTA_APPLE_CERTIFICATE"
+          write_env APPLE_CERTIFICATE_PASSWORD "$OPENQUOTA_APPLE_CERTIFICATE_PASSWORD"
+          write_env APPLE_ID "$OPENQUOTA_APPLE_ID"
+          write_env APPLE_PASSWORD "$OPENQUOTA_APPLE_PASSWORD"
+          write_env APPLE_TEAM_ID "$OPENQUOTA_APPLE_TEAM_ID"
+
+      - name: Build macOS release packages
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: >-
+          pnpm tauri build --target universal-apple-darwin
+          --bundles app,dmg --config src-tauri/tauri.release.conf.json
+
+      - name: Check out release smoke tooling
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-workflow
+          sparse-checkout: .github/actions/platform-smoke
+
+      - name: Smoke test the macOS release package
+        uses: ./.release-workflow/.github/actions/platform-smoke
+        with:
+          artifact-root: src-tauri/target/universal-apple-darwin/release/bundle
+          release-validation: ${{ steps.signing.outputs.native }}
+          apple-team-id: ${{ steps.signing.outputs.native == 'true' && secrets.APPLE_TEAM_ID || '' }}
+
+      - name: Stage macOS release files
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          bundle=src-tauri/target/universal-apple-darwin/release/bundle
+          archives=("$bundle"/macos/*.app.tar.gz)
+          dmgs=("$bundle"/dmg/*.dmg)
+          if [[ ${#archives[@]} != 1 || ${#dmgs[@]} != 1 || ! -s "${archives[0]}.sig" ]]; then
+            echo '::error::Expected one universal app archive, its signature, and one DMG.'
+            exit 1
+          fi
+          mkdir -p macos-release
+          base="macos-release/OpenQuota_${RELEASE_TAG#v}_universal"
+          cp "${archives[0]}" "$base.app.tar.gz"
+          cp "${archives[0]}.sig" "$base.app.tar.gz.sig"
+          cp "${dmgs[0]}" "$base.dmg"
+
+      - name: Upload verified macOS packages
+        id: macos-package
+        uses: actions/upload-artifact@v7
+        with:
+          name: OpenQuota-macos-release-${{ github.run_attempt }}
+          path: macos-release/
+          if-no-files-found: error
 
   publish-release:
     name: Verify and publish release
-    needs: [validate, prepare-release, publish-artifacts]
+    needs: [validate, prepare-release, publish-artifacts, build-macos]
+    if: >-
+      !cancelled() &&
+      needs.validate.result == 'success' &&
+      needs.prepare-release.result == 'success' &&
+      needs.publish-artifacts.result == 'success'
     permissions:
       contents: write
     runs-on: ubuntu-22.04
@@ -369,18 +434,27 @@ jobs:
         with:
           ref: ${{ needs.validate.outputs.release_commit }}
 
-      - name: Download and verify release metadata
+      - name: Read draft release state
+        id: release-state
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
         run: |
-          set -euo pipefail
           mkdir -p release-check
           gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
             > release-check/release.json
+          draft="$(jq -r '.draft' release-check/release.json)"
+          echo "draft=$draft" >> "$GITHUB_OUTPUT"
+
+      - name: Download Windows and Linux release packages
+        if: steps.release-state.outputs.draft == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
           jq -r '.assets[]
             | select(
-                .name | test("(-setup\\.exe|\\.AppImage|\\.deb|\\.app\\.tar\\.gz)(\\.sig)?$")
+                .name | test("(-setup\\.exe|\\.AppImage|\\.deb)(\\.sig)?$")
               )
             | [.id, .name]
             | @tsv' release-check/release.json |
@@ -389,15 +463,24 @@ jobs:
               -H 'Accept: application/octet-stream' \
               > "release-check/$asset_name"
           done
-          node .github/scripts/create-updater-json.mjs \
-            release-check/release.json \
-            release-check \
-            "$GITHUB_REPOSITORY" \
-            "$RELEASE_TAG" \
-            "${RELEASE_TAG#v}" \
-            release-check/latest.json
+
+      - name: Download the smoke-tested macOS packages
+        id: macos-artifact
+        if: >-
+          steps.release-state.outputs.draft == 'true' &&
+          needs.build-macos.result == 'success' &&
+          needs.build-macos.outputs.artifact_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.build-macos.outputs.artifact_id }}
+          path: release-check/macos
 
       - name: Verify updater signatures with the bundled public key
+        id: signatures
+        if: steps.release-state.outputs.draft == 'true'
+        env:
+          MACOS_DOWNLOADED: ${{ steps.macos-artifact.outcome == 'success' }}
         run: |
           curl --fail --location --silent --show-error \
             --output /tmp/minisign.tar.gz \
@@ -415,16 +498,60 @@ jobs:
           if (!encoded) throw new Error('Missing updater public key');
           fs.writeFileSync('release-check/updater-public.key', Buffer.from(encoded, 'base64'));
           NODE
-          for signature in release-check/*.sig; do
-            artifact="${signature%.sig}"
-            test -f "$artifact"
-            base64 --decode "$signature" > "$signature.minisig"
-            minisign -Vm "$artifact" \
+          verify_signature() {
+            local signature="$1"
+            test -f "${signature%.sig}" &&
+              base64 --decode "$signature" > "$signature.minisig" &&
+              minisign -Vm "${signature%.sig}" \
               -p release-check/updater-public.key \
               -x "$signature.minisig"
+          }
+          for signature in release-check/*.sig; do
+            verify_signature "$signature"
           done
 
+          macos_base="release-check/macos/OpenQuota_${RELEASE_TAG#v}_universal"
+          if [[ "$MACOS_DOWNLOADED" == true && -s "$macos_base.dmg" ]] &&
+            verify_signature "$macos_base.app.tar.gz.sig"; then
+            echo 'macos=true' >> "$GITHUB_OUTPUT"
+          else
+            echo '::warning::This release has no verified macOS package.'
+          fi
+
+      - name: Prepare updater manifests
+        if: steps.release-state.outputs.draft == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
+          INCLUDE_MACOS: ${{ steps.signatures.outputs.macos == 'true' }}
+        run: |
+          set -euo pipefail
+          manifest_args=(
+            release-check/release.json release-check "$GITHUB_REPOSITORY"
+            "$RELEASE_TAG" "${RELEASE_TAG#v}" release-check/latest.json
+          )
+          macos_manifest=release-check/latest-macos.json
+          if [[ "$INCLUDE_MACOS" == true ]]; then
+            macos_base="release-check/macos/OpenQuota_${RELEASE_TAG#v}_universal"
+            gh release upload "$RELEASE_TAG" --clobber \
+              "$macos_base.dmg" "$macos_base.app.tar.gz" "$macos_base.app.tar.gz.sig"
+            cp "$macos_base.app.tar.gz.sig" release-check/
+            gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" > release-check/release.json
+            node .github/scripts/create-updater-json.mjs "${manifest_args[@]}" with-macos "$macos_manifest"
+          else
+            node .github/scripts/create-updater-json.mjs "${manifest_args[@]}" without-macos
+            previous_manifest="https://github.com/$GITHUB_REPOSITORY/releases/latest/download/latest-macos.json"
+            status="$(curl --silent --show-error --location --retry 3 --max-time 30 \
+              --output "$macos_manifest" --write-out '%{http_code}' "$previous_manifest")"
+            case "$status" in
+              200) jq -e '.version and (.platforms | has("darwin-aarch64") and has("darwin-x86_64"))' "$macos_manifest" >/dev/null ;;
+              404) rm -f "$macos_manifest" ;; # No macOS release has been published yet.
+              *) echo "::error::Previous macOS manifest returned HTTP $status."; exit 1 ;;
+            esac
+          fi
+
       - name: Publish verified release
+        if: steps.release-state.outputs.draft == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
@@ -432,12 +559,14 @@ jobs:
           bash .github/scripts/verify-release-tag.sh \
             "$RELEASE_TAG" \
             "${{ needs.validate.outputs.release_commit }}"
-          if jq -e '.draft == true' release-check/release.json >/dev/null; then
-            gh release upload "$RELEASE_TAG" release-check/latest.json --clobber
-            gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
-              -F draft=false \
-              -f make_latest=true
+          manifests=(release-check/latest.json)
+          if [[ -f release-check/latest-macos.json ]]; then
+            manifests+=(release-check/latest-macos.json)
           fi
+          gh release upload "$RELEASE_TAG" "${manifests[@]}" --clobber
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
+            -F draft=false \
+            -f make_latest=true
 
       - name: Verify public release downloads
         env:
