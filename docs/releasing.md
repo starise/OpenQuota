@@ -57,6 +57,20 @@ secure timestamp, Gatekeeper approval, and a valid notarization staple. Missing 
 stop the release rather than falling back to ad-hoc signing.
 
 Both opt-ins accept only the exact strings `true` and `false`. An invalid value stops validation so a
-typo cannot silently change release trust policy. A `verify_only` run publishes an already-built
-draft and therefore does not require private signing credentials. The two policy variables must
-still match the draft's native-signing state; a mismatch stops publication.
+typo cannot silently change release trust policy.
+
+## Run and recover a release
+
+Push a `vMAJOR.MINOR.PATCH` tag on `main` or start the **Release** workflow with an existing tag.
+Release validation runs `pnpm verify`, the same command used locally. Publication requires the
+release build and smoke matrix to succeed and the updater signatures to verify.
+
+For a transient failure, use **Re-run failed jobs** on the original release run. If you need to
+change the signing policy or replace a draft asset, start a full **Release** run for the tag so
+that all packages are built and smoke-tested again.
+
+## Verify pricing refreshes
+
+Run **Refresh bundled pricing** manually to generate and test candidate snapshots without
+committing them. Select **publish** on the default branch to commit a passing candidate. The
+scheduled run commits passing changes automatically.

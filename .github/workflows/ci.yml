@@ -10,8 +10,37 @@ permissions:
   contents: read
 
 jobs:
+  frontend:
+    name: Frontend and project checks
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate GitHub Actions workflows
+        run: |
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            --output "$RUNNER_TEMP/actionlint.tar.gz"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" \
+            | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -shellcheck= -pyflakes=
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm verify:frontend
+
   build:
     name: ${{ matrix.os }}
+    needs: frontend
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -45,7 +74,6 @@ jobs:
 
       - uses: pnpm/action-setup@v6
         with:
-          version: 11.11.0
           run_install: false
 
       - uses: dtolnay/rust-toolchain@stable
@@ -59,36 +87,15 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Verify application versions
-        run: pnpm verify:versions
-
-      - name: Verify frontend-backend command contract
-        run: pnpm verify:contracts
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Type check
-        run: pnpm check
-
-      - name: Test frontend
-        run: pnpm test
-
-      - name: Format Rust
-        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-
-      - name: Lint Rust
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-
-      - name: Test Rust
-        run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
+      - name: Verify Rust
+        run: pnpm verify:rust
 
       - name: Test Windows Credential Manager integration
         if: runner.os == 'Windows'
         env:
           OPENQUOTA_TEST_CREDENTIAL_STORE: '1'
         run: >-
-          cargo test --manifest-path src-tauri/Cargo.toml
+          cargo test --locked --manifest-path src-tauri/Cargo.toml
           providers::credential_store::tests::system_credential_store_round_trip_when_requested
           -- --exact --nocapture
 
@@ -110,7 +117,7 @@ jobs:
           security list-keychains -d user -s "${test_keychain}" "${original_keychain}"
           security default-keychain -d user -s "${test_keychain}"
           export OPENQUOTA_TEST_CREDENTIAL_STORE=1
-          cargo test --manifest-path src-tauri/Cargo.toml \
+          cargo test --locked --manifest-path src-tauri/Cargo.toml \
             providers::credential_store::tests::system_credential_store_round_trip_when_requested \
             -- --exact --nocapture
 
@@ -124,7 +131,7 @@ jobs:
             mkdir -p "${HOME}/.local/share/keyrings"
             eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets)"
             export OPENQUOTA_TEST_CREDENTIAL_STORE=1
-            cargo test --manifest-path src-tauri/Cargo.toml \
+            cargo test --locked --manifest-path src-tauri/Cargo.toml \
               providers::credential_store::tests::system_credential_store_round_trip_when_requested \
               -- --exact --nocapture
           '

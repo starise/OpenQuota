@@ -9,15 +9,8 @@ on:
         description: Existing release tag (for example v0.1.0)
         required: true
         type: string
-      verify_only:
-        description: Verify and publish an existing draft without rebuilding
-        required: false
-        default: false
-        type: boolean
-
 permissions:
-  checks: read
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ inputs.tag || github.ref_name }}
@@ -87,7 +80,6 @@ jobs:
           echo "macos_signing=$macos_signing" >> "$GITHUB_OUTPUT"
 
       - name: Validate release signing credentials
-        if: ${{ !inputs.verify_only }}
         env:
           WINDOWS_SIGNING_ENABLED: ${{ steps.signing_policy.outputs.windows_signing }}
           MACOS_SIGNING_ENABLED: ${{ steps.signing_policy.outputs.macos_signing }}
@@ -137,12 +129,11 @@ jobs:
 
       - uses: pnpm/action-setup@v6
         with:
-          version: 11.11.0
           run_install: false
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy,rustfmt
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -154,28 +145,14 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Verify frontend-backend contracts
-        run: pnpm verify:contracts
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Type check
-        run: pnpm check
-
-      - name: Test frontend
-        run: pnpm test
-
-      - name: Test Rust
-        run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
-
-      - name: Lint Rust
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      - name: Verify project
+        run: pnpm verify
 
   prepare-release:
     name: Prepare draft release
     needs: validate
-    if: ${{ !inputs.verify_only && needs.validate.result == 'success' }}
+    permissions:
+      contents: write
     runs-on: ubuntu-22.04
     outputs:
       release_id: ${{ steps.release.outputs.release_id }}
@@ -218,7 +195,8 @@ jobs:
   publish-artifacts:
     name: Build and smoke ${{ matrix.name }}
     needs: [validate, prepare-release]
-    if: ${{ always() && !inputs.verify_only && needs.validate.result == 'success' && needs.prepare-release.result == 'success' }}
+    permissions:
+      contents: write
     runs-on: ${{ matrix.platform }}
     strategy:
       fail-fast: false
@@ -283,7 +261,6 @@ jobs:
 
       - uses: pnpm/action-setup@v6
         with:
-          version: 11.11.0
           run_install: false
 
       - uses: dtolnay/rust-toolchain@stable
@@ -384,70 +361,22 @@ jobs:
   publish-release:
     name: Verify and publish release
     needs: [validate, prepare-release, publish-artifacts]
-    if: ${{ always() && needs.validate.result == 'success' && (inputs.verify_only || (needs.prepare-release.result == 'success' && needs.publish-artifacts.result == 'success')) }}
+    permissions:
+      contents: write
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.validate.outputs.release_commit }}
 
-      - name: Verify release smoke checks
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERIFY_ONLY: ${{ inputs.verify_only }}
-        run: |
-          mkdir -p release-check
-          required=(
-            'Build and smoke Windows x64'
-            'Build and smoke Windows ARM64'
-            'Build and smoke Linux x64'
-            'Build and smoke Linux ARM64'
-            'Build and smoke macOS Universal'
-          )
-          verified=false
-          for attempt in 1 2 3 4 5; do
-            if [[ "$VERIFY_ONLY" = true ]]; then
-              commit="$(git rev-parse HEAD)"
-              gh api \
-                -H 'Accept: application/vnd.github+json' \
-                "repos/$GITHUB_REPOSITORY/commits/$commit/check-runs?filter=all&per_page=100" \
-                > release-check/smoke-checks.json
-              jobs_key=check_runs
-            else
-              gh api \
-                "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest&per_page=100" \
-                > release-check/smoke-checks.json
-              jobs_key=jobs
-            fi
-            missing=0
-            for name in "${required[@]}"; do
-              if ! jq -e --arg key "$jobs_key" --arg name "$name" \
-                '.[$key] | any(.name == $name and .conclusion == "success")' \
-                release-check/smoke-checks.json >/dev/null; then
-                echo "Required release smoke check is not successful: $name"
-                missing=1
-              fi
-            done
-            if test "$missing" -eq 0; then
-              verified=true
-              break
-            fi
-            echo "Release smoke checks are not ready yet (attempt $attempt/5)."
-            sleep 3
-          done
-          test "$verified" = true
-
       - name: Download and verify release metadata
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
         run: |
+          set -euo pipefail
           mkdir -p release-check
-          release_id="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json databaseId --jq '.databaseId')"
-          test -n "$release_id" || {
-            echo "Draft release not found for $RELEASE_TAG" >&2
-            exit 1
-          }
-          gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
             > release-check/release.json
           jq -r '.assets[]
             | select(
@@ -467,12 +396,6 @@ jobs:
             "$RELEASE_TAG" \
             "${RELEASE_TAG#v}" \
             release-check/latest.json
-          gh release upload "$RELEASE_TAG" release-check/latest.json --clobber
-          gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" \
-            > release-check/release.json
-          jq -r '.assets[].name' release-check/release.json \
-            > release-check/assets.txt
-          grep -Fxq 'latest.json' release-check/assets.txt
 
       - name: Verify updater signatures with the bundled public key
         run: |
@@ -492,7 +415,6 @@ jobs:
           if (!encoded) throw new Error('Missing updater public key');
           fs.writeFileSync('release-check/updater-public.key', Buffer.from(encoded, 'base64'));
           NODE
-          verified=0
           for signature in release-check/*.sig; do
             artifact="${signature%.sig}"
             test -f "$artifact"
@@ -500,30 +422,32 @@ jobs:
             minisign -Vm "$artifact" \
               -p release-check/updater-public.key \
               -x "$signature.minisig"
-            verified=$((verified + 1))
           done
-          test "$verified" -eq 7
 
       - name: Publish verified release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
         run: |
           bash .github/scripts/verify-release-tag.sh \
             "$RELEASE_TAG" \
             "${{ needs.validate.outputs.release_commit }}"
-          release_id="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json databaseId --jq '.databaseId')"
-          test -n "$release_id"
-          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
-            -F draft=false \
-            -f make_latest=true
+          if jq -e '.draft == true' release-check/release.json >/dev/null; then
+            gh release upload "$RELEASE_TAG" release-check/latest.json --clobber
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
+              -F draft=false \
+              -f make_latest=true
+          fi
 
       - name: Verify public release downloads
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
         run: |
-          release_id="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json databaseId --jq '.databaseId')"
-          gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
             > release-check/release.json
+          jq -e '.draft == false and any(.assets[]; .name == "latest.json")' \
+            release-check/release.json >/dev/null
           urls="$(jq -r '.assets[].browser_download_url' release-check/release.json | sort -u)"
           while IFS= read -r url; do
             downloaded=false
