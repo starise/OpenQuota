@@ -71,8 +71,9 @@ fails validation, Windows and Linux can still be published. macOS keeps its prev
 version in `latest-macos.json`, which is carried forward unchanged. The first release without a
 verified Mac package has no macOS manifest. A published release is never backfilled by a rerun.
 
-The separate **macOS CI** workflow runs on pushes to `main`. For a manual package test, choose
-`macos-26` for Apple Silicon or `macos-26-intel` for Intel. It uploads Actions artifacts only.
+The separate **macOS CI** workflow runs on Intel for pushes to `main`. For a manual package test,
+choose `macos-26` or `macos-15` for Apple Silicon, or `macos-26-intel` for Intel. It uploads Actions
+artifacts only.
 
 For a transient failure, use **Re-run failed jobs** on the original release run. If you need to
 change the signing policy or replace a draft asset, start a full **Release** run for the tag so
