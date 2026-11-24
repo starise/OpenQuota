@@ -33,21 +33,25 @@ const signedArtifacts = [
     pattern: /_arm64\.deb$/i,
     platforms: ['linux-aarch64-deb'],
   },
-  {
-    label: 'macOS Universal app archive',
-    pattern: /_universal\.app\.tar\.gz$/i,
-    platforms: [
-      'darwin-aarch64',
-      'darwin-x86_64',
-      'darwin-universal',
-      'darwin-aarch64-app',
-      'darwin-x86_64-app',
-      'darwin-universal-app',
-    ],
-  },
 ];
 
+const macosArchive = {
+  label: 'macOS Universal app archive',
+  pattern: /_universal\.app\.tar\.gz$/i,
+  platforms: [
+    'darwin-aarch64',
+    'darwin-x86_64',
+    'darwin-universal',
+    'darwin-aarch64-app',
+    'darwin-x86_64-app',
+    'darwin-universal-app',
+  ],
+};
+
 const distributablePattern = /(-setup\.exe|\.AppImage|\.deb|\.app\.tar\.gz|\.dmg)$/i;
+const macosPlatformPattern = /^darwin-/;
+const macosDmgPattern = /_universal\.dmg$/i;
+const macosArtifactPattern = /_universal\.(?:app\.tar\.gz(?:\.sig)?|dmg)$/i;
 
 function findExactlyOne(assets, pattern, label) {
   const matches = assets.filter((asset) => pattern.test(asset.name));
@@ -57,7 +61,14 @@ function findExactlyOne(assets, pattern, label) {
   return matches[0];
 }
 
-export function createUpdaterMetadata(release, signatures, repository, tag, version) {
+export function createUpdaterMetadata(
+  release,
+  signatures,
+  repository,
+  tag,
+  version,
+  { includeMacos = true } = {},
+) {
   if (!Array.isArray(release?.assets)) {
     throw new Error('GitHub release metadata has no assets array.');
   }
@@ -71,7 +82,16 @@ export function createUpdaterMetadata(release, signatures, repository, tag, vers
   const platforms = {};
   const prefix = `https://github.com/${repository}/releases/download/${encodeURIComponent(tag)}/`;
 
-  for (const definition of signedArtifacts) {
+  if (
+    !includeMacos &&
+    assets.some(
+      (asset) => macosArtifactPattern.test(asset.name) && asset.name.includes(`_${version}_`),
+    )
+  ) {
+    throw new Error(`macOS artifacts for release version ${version} are not allowed in this mode.`);
+  }
+
+  for (const definition of includeMacos ? [...signedArtifacts, macosArchive] : signedArtifacts) {
     const asset = findExactlyOne(assets, definition.pattern, definition.label);
     if (!asset.name.includes(`_${version}_`)) {
       throw new Error(
@@ -98,11 +118,13 @@ export function createUpdaterMetadata(release, signatures, repository, tag, vers
     recognized.add(asset.name);
   }
 
-  const dmg = findExactlyOne(assets, /_universal\.dmg$/i, 'macOS Universal DMG');
-  if (!dmg.name.includes(`_${version}_`)) {
-    throw new Error(`macOS Universal DMG does not match release version ${version}: ${dmg.name}`);
+  if (includeMacos) {
+    const dmg = findExactlyOne(assets, macosDmgPattern, 'macOS Universal DMG');
+    if (!dmg.name.includes(`_${version}_`)) {
+      throw new Error(`macOS Universal DMG does not match release version ${version}: ${dmg.name}`);
+    }
+    recognized.add(dmg.name);
   }
-  recognized.add(dmg.name);
 
   const unexpected = assets
     .filter((asset) => distributablePattern.test(asset.name) && !recognized.has(asset.name))
@@ -119,14 +141,38 @@ export function createUpdaterMetadata(release, signatures, repository, tag, vers
   };
 }
 
+export function createMacosUpdaterMetadata(metadata) {
+  const platforms = Object.fromEntries(
+    Object.entries(metadata.platforms).filter(([platform]) => macosPlatformPattern.test(platform)),
+  );
+  if (Object.keys(platforms).length !== macosArchive.platforms.length) {
+    throw new Error('Updater metadata does not contain all macOS targets.');
+  }
+  return { ...metadata, platforms };
+}
+
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
 if (invokedPath === fileURLToPath(import.meta.url)) {
-  const [releasePath, artifactDirectory, repository, tag, version, outputPath] =
+  const [releasePath, artifactDirectory, repository, tag, version, outputPath, ...options] =
     process.argv.slice(2);
   if (!releasePath || !artifactDirectory || !repository || !tag || !version || !outputPath) {
     throw new Error(
-      'Usage: create-updater-json.mjs <release.json> <artifact-dir> <repository> <tag> <version> <output.json>',
+      'Usage: create-updater-json.mjs <release.json> <artifact-dir> <repository> <tag> <version> <output.json> [with-macos <macos-output.json> | without-macos]',
     );
+  }
+  const mode = options.shift();
+  let macosOutputPath;
+  if (mode === 'with-macos') {
+    if (options.length !== 1 || !options[0]) {
+      throw new Error('with-macos mode requires a macOS output path.');
+    }
+    macosOutputPath = options[0];
+  } else if (mode === 'without-macos') {
+    if (options.length > 0) {
+      throw new Error('without-macos mode does not accept more arguments.');
+    }
+  } else if (mode || options.length > 0) {
+    throw new Error(`Unknown mode or arguments: ${[mode, ...options].join(' ')}`);
   }
 
   const release = JSON.parse(fs.readFileSync(releasePath, 'utf8'));
@@ -138,6 +184,12 @@ if (invokedPath === fileURLToPath(import.meta.url)) {
         fs.readFileSync(path.join(artifactDirectory, asset.name), 'utf8'),
       ]),
   );
-  const metadata = createUpdaterMetadata(release, signatures, repository, tag, version);
+  const metadata = createUpdaterMetadata(release, signatures, repository, tag, version, {
+    includeMacos: mode !== 'without-macos',
+  });
   fs.writeFileSync(outputPath, `${JSON.stringify(metadata, null, 2)}\n`);
+  if (mode === 'with-macos') {
+    const macosMetadata = createMacosUpdaterMetadata(metadata);
+    fs.writeFileSync(macosOutputPath, `${JSON.stringify(macosMetadata, null, 2)}\n`);
+  }
 }

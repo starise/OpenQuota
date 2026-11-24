@@ -11,10 +11,17 @@ export interface GithubReleaseMetadata {
   assets: Array<{ id: number; name: string }>;
 }
 
+export interface CreateUpdaterMetadataOptions {
+  includeMacos?: boolean;
+}
+
 export function createUpdaterMetadata(
   release: GithubReleaseMetadata,
   signatures: Record<string, string>,
   repository: string,
   tag: string,
   version: string,
+  options?: CreateUpdaterMetadataOptions,
 ): UpdaterMetadata;
+
+export function createMacosUpdaterMetadata(metadata: UpdaterMetadata): UpdaterMetadata;
