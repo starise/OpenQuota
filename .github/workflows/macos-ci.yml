@@ -1,0 +1,86 @@
+name: macOS CI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: macOS runner architecture
+        required: true
+        type: choice
+        options:
+          - macos-26
+          - macos-26-intel
+        default: macos-26
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    name: macOS package and smoke
+    runs-on: ${{ inputs.runner || 'macos-26' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify frontend
+        run: pnpm verify:frontend
+
+      - name: Verify Rust
+        run: pnpm verify:rust
+
+      - name: Test macOS Keychain integration
+        run: |
+          set -euo pipefail
+          original_keychain="$(security default-keychain -d user | tr -d '"')"
+          test_keychain="${RUNNER_TEMP}/openquota-credential-test.keychain-db"
+          cleanup() {
+            security default-keychain -d user -s "${original_keychain}" || true
+            security list-keychains -d user -s "${original_keychain}" || true
+            security delete-keychain "${test_keychain}" || true
+          }
+          trap cleanup EXIT
+          security create-keychain -p openquota-test "${test_keychain}"
+          security set-keychain-settings -lut 21600 "${test_keychain}"
+          security unlock-keychain -p openquota-test "${test_keychain}"
+          security list-keychains -d user -s "${test_keychain}" "${original_keychain}"
+          security default-keychain -d user -s "${test_keychain}"
+          export OPENQUOTA_TEST_CREDENTIAL_STORE=1
+          cargo test --locked --manifest-path src-tauri/Cargo.toml \
+            providers::credential_store::tests::system_credential_store_round_trip_when_requested \
+            -- --exact --nocapture
+
+      - name: Build macOS DMG
+        run: pnpm tauri build --bundles dmg
+        env:
+          APPLE_SIGNING_IDENTITY: '-'
+
+      - name: Smoke test packaged application
+        uses: ./.github/actions/platform-smoke
+
+      - name: Upload macOS DMG
+        uses: actions/upload-artifact@v7
+        with:
+          name: OpenQuota-macOS-DMG
+          path: src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
