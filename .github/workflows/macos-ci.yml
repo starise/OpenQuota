@@ -84,4 +84,5 @@ jobs:
         with:
           name: OpenQuota-macOS-DMG
           path: src-tauri/target/release/bundle/dmg/*.dmg
+          retention-days: 3
           if-no-files-found: error
