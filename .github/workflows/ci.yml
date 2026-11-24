@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [codex/macos-cloud-smoke]
   pull_request:
   workflow_dispatch:
 
@@ -45,7 +45,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-22.04]
+        os: [macos-26, macos-26-intel]
 
     steps:
       - uses: actions/checkout@v7
