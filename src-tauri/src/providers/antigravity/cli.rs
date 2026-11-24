@@ -1,4 +1,4 @@
-use std::{env, path::Path, time::Duration};
+use std::{env, path::Path, process::Command, time::Duration};
 
 use serde_json::Value;
 
@@ -21,7 +21,7 @@ pub(super) fn fetch_quotas() -> Option<Result<Vec<QuotaWindow>, AntigravityError
         Err(_) => return Some(Err(AntigravityError::Unavailable)),
     };
     let version = output_with_timeout(
-        background_command(&binary)
+        agy_command(&binary)
             .current_dir(work_dir.path())
             .arg("--version"),
         Duration::from_secs(3),
@@ -47,9 +47,16 @@ fn supports_usage_command(version: &str) -> bool {
     parts.next().is_none() && (major, minor, patch) >= (1, 1, 11)
 }
 
+fn agy_command(binary: &Path) -> Command {
+    let mut command = background_command(binary);
+    // The updater can open a console on Windows even when agy runs without one.
+    command.env("AGY_CLI_DISABLE_AUTO_UPDATE", "true");
+    command
+}
+
 fn read_report(binary: &Path, work_dir: &Path) -> Result<Vec<QuotaWindow>, AntigravityError> {
     let output = output_with_timeout(
-        background_command(binary).current_dir(work_dir).args([
+        agy_command(binary).current_dir(work_dir).args([
             "-p",
             "/usage",
             "--output-format",
