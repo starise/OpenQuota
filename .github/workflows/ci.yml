@@ -45,7 +45,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-26, macos-26-intel]
+        os: [macos-15]
 
     steps:
       - uses: actions/checkout@v7
