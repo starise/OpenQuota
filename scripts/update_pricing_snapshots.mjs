@@ -59,6 +59,7 @@ function parseLiteLlm(data) {
       (cacheWrite ?? input) * 1e6,
       (cacheRead ?? input * 0.1) * 1e6,
       {
+        cre: cacheRead === null ? false : null,
         ia: inputAbove200k === null ? null : inputAbove200k * 1e6,
         oa: outputAbove200k === null ? null : outputAbove200k * 1e6,
         cwa: cacheWriteAbove200k === null ? null : cacheWriteAbove200k * 1e6,
@@ -96,6 +97,7 @@ function parseModelsDev(data) {
         output,
         cacheWrite ?? input,
         cacheRead ?? input * 0.1,
+        { cre: cacheRead === null ? false : null },
       );
     }
   }
