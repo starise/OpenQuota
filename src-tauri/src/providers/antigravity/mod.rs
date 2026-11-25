@@ -11,7 +11,8 @@ use serde_json::{json, Value};
 use thiserror::Error;
 
 use crate::models::{
-    MetricDefinition, MetricSection, ProviderDefinition, ProviderSnapshot, UsageHistory,
+    MetricDefinition, MetricSection, ProviderDefinition, ProviderSnapshot, QuotaWindow,
+    UsageHistory,
 };
 
 use self::{
@@ -150,15 +151,24 @@ impl AntigravityProvider {
             }
         }
 
-        if let Some(result) = cli::fetch_quotas() {
-            return result.map(|quotas| snapshot(None, quotas));
-        }
+        self.refresh_from_cli_or_credentials(cli::fetch_quotas(), load_token)
+    }
 
-        let keychain = match load_token()? {
+    fn refresh_from_cli_or_credentials(
+        &self,
+        cli_result: Option<Result<Vec<QuotaWindow>, AntigravityError>>,
+        read_token: impl FnOnce() -> Result<Option<auth::AntigravityToken>, AntigravityError>,
+    ) -> Result<ProviderSnapshot, AntigravityError> {
+        let cli_error = match cli_result {
+            Some(Ok(quotas)) => return Ok(snapshot(None, quotas)),
+            Some(Err(error)) => Some(error),
+            None => None,
+        };
+        let keychain = match read_token()? {
             Some(token) => token,
             None => {
                 self.access_token_cache.discard();
-                return Err(AntigravityError::NotSignedIn);
+                return Err(cli_error.unwrap_or(AntigravityError::NotSignedIn));
             }
         };
         let now = Utc::now();
@@ -432,8 +442,24 @@ mod tests {
 
     use super::{
         access_token_candidates, auth::AntigravityToken, credential_failure, has_refresh_source,
-        should_refresh_access_token, AntigravityError,
+        should_refresh_access_token, AntigravityError, AntigravityProvider,
     };
+
+    #[test]
+    fn failed_cli_report_leaves_credential_fallback_available() {
+        let directory = tempfile::tempdir().unwrap();
+        let provider = AntigravityProvider::new(directory.path().join("token.json")).unwrap();
+
+        let result = provider
+            .refresh_from_cli_or_credentials(Some(Err(AntigravityError::Unavailable)), || {
+                Err(AntigravityError::CredentialStoreUnreadable)
+            });
+
+        assert!(matches!(
+            result,
+            Err(AntigravityError::CredentialStoreUnreadable)
+        ));
+    }
 
     #[test]
     fn keychain_access_token_precedes_a_distinct_cached_token() {
