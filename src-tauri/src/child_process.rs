@@ -123,19 +123,30 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn background_console_process_has_no_console_window() {
-        let script = r#"Add-Type -Name NativeMethods -Namespace OpenQuota -MemberDefinition '[System.Runtime.InteropServices.DllImport("kernel32.dll")] public static extern System.IntPtr GetConsoleWindow();'; [OpenQuota.NativeMethods]::GetConsoleWindow().ToInt64()"#;
-        let mut command = background_command("powershell");
-        command.args([
-            "-NoLogo",
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            script,
-        ]);
-        let output = output_with_timeout(command, Duration::from_secs(10)).unwrap();
+        const PROBE: &str = "OPENQUOTA_TEST_CONSOLE_PROBE";
+        if env::var_os(PROBE).is_some() {
+            // GetConsoleWindow takes no arguments and returns null without an attached console.
+            let window = unsafe { windows_sys::Win32::System::Console::GetConsoleWindow() };
+            assert!(window.is_null(), "background process has a console window");
+            println!("console probe passed");
+            return;
+        }
 
-        assert!(output.status.success());
-        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "0");
+        let mut command = background_command(env::current_exe().unwrap());
+        command
+            .args([
+                "--exact",
+                "child_process::tests::background_console_process_has_no_console_window",
+                "--nocapture",
+            ])
+            .env(PROBE, "1");
+        let output = output_with_timeout(command, Duration::from_secs(10)).unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success() && stdout.contains("console probe passed"),
+            "{stdout}{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     #[test]

@@ -59,3 +59,6 @@ zbus = "5.13"
 
 [dev-dependencies]
 fontdue = { version = "0.9.3", default-features = false, features = ["std"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_Console"] }
