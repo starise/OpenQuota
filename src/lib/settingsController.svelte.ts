@@ -73,7 +73,7 @@ export class SettingsController {
     try {
       const state = await getAppSettings();
       if (this.#pendingMutations === 0 && sequence === this.#mutationSequence) {
-        this.setState(state);
+        this.acceptExternalState(state);
       } else {
         this.#externalRefreshPending = true;
       }

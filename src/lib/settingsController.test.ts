@@ -199,6 +199,25 @@ describe('SettingsController', () => {
     expect(controller.state?.settingsRevision).toBe(1);
   });
 
+  it('defers a focus refresh that finishes during a draft', async () => {
+    let finishRefresh: ((state: SettingsViewState) => void) | undefined;
+    mocks.getAppSettings.mockReturnValue(
+      new Promise<SettingsViewState>((resolve) => (finishRefresh = resolve)),
+    );
+    const controller = new SettingsController(vi.fn());
+    controller.setState(settingsView());
+
+    const refresh = controller.refreshIfIdle();
+    controller.beginDraft();
+    controller.setDraftSettings(settingsView('light').settings);
+    finishRefresh?.(settingsView('dark', 1));
+    await refresh;
+
+    expect(controller.state?.settings.theme).toBe('light');
+    controller.endDraft();
+    expect(controller.state?.settings.theme).toBe('dark');
+  });
+
   it('uses the same queue and revisions for non-save mutations', async () => {
     let finishSave: ((state: SettingsViewState) => void) | undefined;
     mocks.saveAppSettings.mockImplementation(
