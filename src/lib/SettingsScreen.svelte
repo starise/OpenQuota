@@ -160,7 +160,7 @@
           type="button"
           aria-pressed={recording}
           aria-describedby="shortcut-recording-help"
-          data-tooltip="Open OpenQuota from anywhere"
+          data-tooltip="Show or hide OpenQuota"
           onclick={() => (recording = !recording)}
           onkeydown={record}
           onblur={() => (recording = false)}

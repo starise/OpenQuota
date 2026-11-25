@@ -71,7 +71,7 @@ fn install_tray(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     };
     #[cfg(not(target_os = "macos"))]
     let menu = {
-        let open = MenuItem::with_id(app, "open", "Open OpenQuota", true, None::<&str>)?;
+        let open = MenuItem::with_id(app, "open", "Show OpenQuota", true, None::<&str>)?;
         let customize = MenuItem::with_id(app, "customize", "Customize…", true, None::<&str>)?;
         let settings_item = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
         let separator = PredefinedMenuItem::separator(app)?;
