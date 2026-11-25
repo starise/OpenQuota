@@ -89,6 +89,30 @@ describe('Total Spend projection', () => {
     expect(projectSpend(providers, 'today', 'costPerMillion').centerValue).toBe(17.5);
   });
 
+  it('includes confirmed free usage in the cost and blended rate', () => {
+    const free = {
+      id: 'opencode',
+      usage: usage({
+        tokens: 1_000_000,
+        estimatedCostUsd: 0,
+        costEstimated: false,
+        estimateComplete: true,
+      }),
+    };
+    const paid = {
+      id: 'codex',
+      usage: usage({
+        tokens: 1_000_000,
+        estimatedCostUsd: 2,
+        costEstimated: true,
+        estimateComplete: true,
+      }),
+    };
+
+    expect(projectSpend([free], 'today', 'cost').centerValue).toBe(0);
+    expect(projectSpend([free, paid], 'today', 'costPerMillion').centerValue).toBe(1);
+  });
+
   it('tracks local estimation independently from pricing coverage', () => {
     const providers = [
       {

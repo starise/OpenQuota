@@ -29,7 +29,7 @@ export function selectedPeriod(
 
 function valueFor(period: UsagePeriod, metric: AppSettings['totalSpendMetric']): number | null {
   if (metric === 'tokens') return period.tokens > 0 ? period.tokens : null;
-  if (period.estimatedCostUsd === null || period.estimatedCostUsd <= 0) return null;
+  if (period.estimatedCostUsd === null || period.estimatedCostUsd < 0) return null;
   if (metric === 'costPerMillion') {
     return period.tokens > 0 ? (period.estimatedCostUsd / period.tokens) * 1_000_000 : null;
   }
