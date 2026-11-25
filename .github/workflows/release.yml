@@ -22,6 +22,8 @@ env:
 jobs:
   validate:
     name: Validate release
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    environment: release-signing
     runs-on: ubuntu-22.04
     outputs:
       release_commit: ${{ steps.trusted_tag.outputs.release_commit }}
@@ -169,6 +171,7 @@ jobs:
   publish-artifacts:
     name: Build and smoke ${{ matrix.name }}
     needs: [validate, prepare-release]
+    environment: release-signing
     permissions:
       contents: write
     runs-on: ${{ matrix.platform }}
@@ -295,6 +298,7 @@ jobs:
   build-macos:
     name: Build and smoke macOS Universal
     needs: validate
+    environment: release-signing
     runs-on: macos-26-intel
     timeout-minutes: 60
     outputs:

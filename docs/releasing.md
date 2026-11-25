@@ -6,6 +6,17 @@ and macOS signing are independent opt-ins because they require externally provis
 If the updater key is encrypted, also configure `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. The updater
 key is project-generated and does not require a paid certificate authority or signing account.
 
+## Protect the signing credentials
+
+Create the `release-signing` GitHub environment before running the release workflow. Under
+**Deployment branches and tags**, allow the `main` branch and `v*` tags. Protect creation and updates
+of the release tags with a tag ruleset.
+
+Add the updater key, its optional password, and any enabled native-signing secrets to
+`release-signing`. Remove copies of those secrets from the repository or organization scope after
+the migration. Keep the native-signing opt-ins and signer subject as repository variables.
+See [GitHub's environment setup guide](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments).
+
 ## Default release policy
 
 Leave both native-signing repository variables unset or set them to `false`:
@@ -25,13 +36,13 @@ uploaded, and verified with the bundled public key before publication.
 
 Set `ENABLE_WINDOWS_NATIVE_SIGNING` to `true` only after configuring all of the following:
 
-| Kind             | Name                     |
-| ---------------- | ------------------------ |
-| Actions secret   | `ES_USERNAME`            |
-| Actions secret   | `ES_PASSWORD`            |
-| Actions secret   | `ES_CREDENTIAL_ID`       |
-| Actions secret   | `ES_TOTP_SECRET`         |
-| Actions variable | `WINDOWS_SIGNER_SUBJECT` |
+| Kind               | Name                     |
+| ------------------ | ------------------------ |
+| Environment secret | `ES_USERNAME`            |
+| Environment secret | `ES_PASSWORD`            |
+| Environment secret | `ES_CREDENTIAL_ID`       |
+| Environment secret | `ES_TOTP_SECRET`         |
+| Actions variable   | `WINDOWS_SIGNER_SUBJECT` |
 
 This enables the reviewed SSL.com CodeSignTool configuration. The workflow then requires a valid,
 timestamped Authenticode signature on both the installer and installed executable. Missing or
@@ -39,7 +50,7 @@ incorrect values stop the release rather than silently producing an unsigned Win
 
 ## Enabling macOS native signing
 
-Set `ENABLE_MACOS_NATIVE_SIGNING` to `true` only after configuring all of the following Actions
+Set `ENABLE_MACOS_NATIVE_SIGNING` to `true` only after configuring all of the following environment
 secrets:
 
 - `APPLE_CERTIFICATE`
@@ -61,7 +72,8 @@ typo cannot silently change release trust policy.
 
 ## Run and recover a release
 
-Push a `vMAJOR.MINOR.PATCH` tag on `main` or start the **Release** workflow with an existing tag.
+Push a `vMAJOR.MINOR.PATCH` tag on `main` or start the **Release** workflow from `main` with an
+existing tag.
 Release validation runs `pnpm verify`, the same command used locally. Publication requires the
 Windows and Linux build and smoke matrix to succeed and their updater signatures to verify.
 

@@ -12,6 +12,9 @@ const {
 } = release.jobs;
 
 assert.deepEqual(validate.permissions ?? release.permissions, { contents: 'read' });
+for (const job of [validate, build, macos]) {
+  assert.equal(job.environment, 'release-signing');
+}
 
 const trustedTag = validate.steps.findIndex((step) => step.id === 'trusted_tag');
 const credentials = validate.steps.findIndex((step) => step.env?.TAURI_SIGNING_PRIVATE_KEY);
