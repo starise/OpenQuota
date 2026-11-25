@@ -544,6 +544,9 @@ describe('OpenQuota dashboard', () => {
     expect(within(totalSpend).getByText('2.1')).toBeInTheDocument();
     expect(within(totalSpend).getByText('million')).toBeInTheDocument();
     expect(within(totalSpend).getByText('2.1M')).toBeInTheDocument();
+    expect(
+      within(totalSpend).getByText('Token total excludes usage without pricing.'),
+    ).toBeVisible();
     expect(within(totalSpend).queryByText('No data')).not.toBeInTheDocument();
   });
 

@@ -145,6 +145,7 @@ impl DailyUsageAccumulator {
     pub fn add_unknown_model(&mut self, date: NaiveDate, model: &str) {
         let model = model.trim();
         if !model.is_empty() {
+            self.days.entry(date).or_default();
             self.unknown_models_by_day
                 .entry(date)
                 .or_default()
@@ -153,7 +154,7 @@ impl DailyUsageAccumulator {
     }
 
     /// Builds the three spend periods. Idle or unknown-only periods stay unbacked (`None`), while
-    /// the trend receives only active days and fills calendar gaps in the UI layer.
+    /// daily rows retain pricing gaps so they can be attributed to the right period.
     pub fn build(self, now: DateTime<Utc>, source_note: &str) -> UsageHistory {
         let today = now.with_timezone(&Local).date_naive();
         let yesterday = today.checked_sub_days(Days::new(1));
@@ -164,11 +165,11 @@ impl DailyUsageAccumulator {
             .days
             .range(since..=today)
             .rev()
-            .filter(|(_, day)| has_usage(day))
+            .filter(|(date, day)| has_usage(day) || self.unknown_models_by_day.contains_key(date))
             .map(|(date, day)| DailyUsage {
                 date: date.to_string(),
                 tokens: day.tokens,
-                estimated_cost_usd: Some(day.cost),
+                estimated_cost_usd: has_usage(day).then_some(day.cost),
                 estimate_complete: self
                     .unknown_models_by_day
                     .get(date)
@@ -437,7 +438,10 @@ mod tests {
         let history = accumulator.build(now, "From test logs");
         assert!(history.today.is_none());
         assert!(history.last_30_days.is_none());
-        assert!(history.daily.is_empty());
+        assert_eq!(history.daily.len(), 1);
+        assert_eq!(history.daily[0].tokens, 0);
+        assert_eq!(history.daily[0].estimated_cost_usd, None);
+        assert!(!history.daily[0].estimate_complete);
         assert_eq!(history.unknown_models, ["mystery"]);
     }
 

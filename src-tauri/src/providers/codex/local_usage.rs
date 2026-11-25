@@ -991,7 +991,7 @@ mod tests {
 
         assert!(history.today.is_none());
         assert!(history.last_30_days.is_none());
-        assert!(history.daily.is_empty());
+        assert!(!history.daily[0].estimate_complete);
         assert_eq!(history.unknown_models, ["future-unpriced-model"]);
     }
 

@@ -154,6 +154,9 @@
         </div>
       </div>
     {/if}
+    {#if settings.totalSpendMetric === 'tokens' && !projection.estimateComplete}
+      <p class="total-card__coverage">Token total excludes usage without pricing.</p>
+    {/if}
   </div>
 </section>
 
@@ -216,6 +219,12 @@
     .total-card__body {
       justify-content: flex-start;
       padding-top: 10px;
+    }
+
+    .total-card__coverage {
+      margin: 6px 0 0;
+      color: var(--secondary);
+      font-size: 10px;
     }
 
     .spend-ring {

@@ -40,7 +40,17 @@ export function projectSpend(
   providers: SpendProvider[],
   periodSelection: AppSettings['totalSpendPeriod'],
   metric: AppSettings['totalSpendMetric'],
+  now = Date.now(),
 ): SpendProjection {
+  const date = new Date(now);
+  if (periodSelection === 'yesterday') date.setDate(date.getDate() - 1);
+  const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  const estimateComplete = providers.every(({ usage }) => {
+    if (selectedPeriod(usage, periodSelection)?.estimateComplete === false) return false;
+    return periodSelection === 'last30Days'
+      ? usage.unknownModels.length === 0
+      : !usage.daily.some((day) => day.date === dateKey && !day.estimateComplete);
+  });
   const slices = providers
     .flatMap((provider) => {
       const period = selectedPeriod(provider.usage, periodSelection);
@@ -51,7 +61,7 @@ export function projectSpend(
     .sort((left, right) => right.value - left.value || left.id.localeCompare(right.id));
 
   if (slices.length === 0) {
-    return { slices, centerValue: null, costEstimated: false, estimateComplete: true };
+    return { slices, centerValue: null, costEstimated: false, estimateComplete };
   }
 
   const centerValue =
@@ -70,7 +80,7 @@ export function projectSpend(
     slices,
     centerValue,
     costEstimated: metric !== 'tokens' && slices.some((slice) => slice.period.costEstimated),
-    estimateComplete: slices.every((slice) => slice.period.estimateComplete),
+    estimateComplete,
   };
 }
 

@@ -135,4 +135,24 @@ describe('Total Spend projection', () => {
       estimateComplete: false,
     });
   });
+
+  it('marks only the periods affected by an unknown-only day', () => {
+    const now = new Date(2026, 10, 25, 12).getTime();
+    const providers = [
+      {
+        id: 'codex',
+        usage: {
+          ...empty,
+          daily: [
+            { date: '2026-11-24', tokens: 0, estimatedCostUsd: null, estimateComplete: false },
+          ],
+          unknownModels: ['unpriced'],
+        },
+      },
+    ];
+
+    expect(projectSpend(providers, 'today', 'tokens', now).estimateComplete).toBe(true);
+    expect(projectSpend(providers, 'yesterday', 'tokens', now).estimateComplete).toBe(false);
+    expect(projectSpend(providers, 'last30Days', 'tokens', now).estimateComplete).toBe(false);
+  });
 });
