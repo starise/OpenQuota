@@ -60,11 +60,14 @@ fn discover_windows() -> Option<LanguageServer> {
     let script = r#"
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $OutputEncoding = [Console]::OutputEncoding
-$netstat = @(& "$env:SystemRoot\System32\netstat.exe" -ano -p TCP 2>$null)
+$netstat = $null
 $items = Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'language_server|^agy(\.exe)?$' } | ForEach-Object {
     $pidValue = $_.ProcessId
     $ports = @(Get-NetTCPConnection -OwningProcess $pidValue -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty LocalPort -Unique)
     if ($ports.Count -eq 0) {
+        if ($null -eq $netstat) {
+            $netstat = @(& "$env:SystemRoot\System32\netstat.exe" -ano -p TCP 2>$null)
+        }
         $ports = @($netstat | ForEach-Object {
             $fields = @($_ -split '\s+' | Where-Object { $_ })
             if ($fields.Count -ge 5 -and $fields[3] -eq 'LISTENING' -and $fields[4] -eq "$pidValue" -and $fields[1] -match ':(\d+)$') {
