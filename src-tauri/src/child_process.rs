@@ -151,25 +151,32 @@ mod tests {
 
     #[test]
     fn background_command_deadline_terminates_a_slow_process() {
-        #[cfg(windows)]
-        let mut command = background_command("powershell");
-        #[cfg(windows)]
-        command.args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            "Start-Sleep -Seconds 5",
-        ]);
-        #[cfg(unix)]
-        let mut command = background_command("sleep");
-        #[cfg(unix)]
-        command.arg("5");
+        const READY: &str = "OPENQUOTA_TEST_SLOW_PROCESS_READY";
+        if let Some(path) = env::var_os(READY) {
+            fs::write(path, []).unwrap();
+            thread::sleep(Duration::from_secs(6));
+            return;
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let ready = dir.path().join("ready");
+        let mut command = background_command(env::current_exe().unwrap());
+        command
+            .args([
+                "--exact",
+                "child_process::tests::background_command_deadline_terminates_a_slow_process",
+            ])
+            .env(READY, &ready);
 
         let started = Instant::now();
-        let error = output_with_timeout(command, Duration::from_millis(100)).unwrap_err();
+        let error = output_with_timeout(command, Duration::from_secs(2)).unwrap_err();
 
+        assert!(
+            ready.is_file(),
+            "the child did not start before the deadline"
+        );
         assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
-        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(started.elapsed() < Duration::from_secs(4));
     }
 
     #[test]
