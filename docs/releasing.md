@@ -94,5 +94,4 @@ that all packages are built and smoke-tested again.
 ## Verify pricing refreshes
 
 Run **Refresh bundled pricing** manually to generate and test candidate snapshots without
-committing them. Select **publish** on the default branch to commit a passing candidate. The
-scheduled run commits passing changes automatically.
+committing them. Select **publish** on the default branch to commit a passing candidate.
