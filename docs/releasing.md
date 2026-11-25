@@ -65,15 +65,15 @@ Push a `vMAJOR.MINOR.PATCH` tag on `main` or start the **Release** workflow with
 Release validation runs `pnpm verify`, the same command used locally. Publication requires the
 Windows and Linux build and smoke matrix to succeed and their updater signatures to verify.
 
-GitHub Actions builds the macOS universal package on an ARM64 runner. The release includes macOS
+GitHub Actions builds the macOS universal package on an Intel runner. The release includes macOS
 when the DMG smoke test and updater signature verification succeed. When the runner or package
 fails validation, Windows and Linux can still be published. macOS keeps its previous verified
 version in `latest-macos.json`, which is carried forward unchanged. The first release without a
 verified Mac package has no macOS manifest. A published release is never backfilled by a rerun.
 
-The separate **macOS CI** workflow runs on Intel for pushes to `main`. For a manual package test,
-choose `macos-26` or `macos-15` for Apple Silicon, or `macos-26-intel` for Intel. It uploads Actions
-artifacts only.
+**CI** and **macOS CI** run code checks on pull requests and pushes to `main`. **Release** builds
+and smoke-tests the packages. To run the macOS code checks manually, choose `macos-26-intel` for
+Intel or `macos-26` or `macos-15` for Apple Silicon.
 
 For a transient failure, use **Re-run failed jobs** on the original release run. If you need to
 change the signing policy or replace a draft asset, start a full **Release** run for the tag so

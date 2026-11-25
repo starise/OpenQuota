@@ -295,7 +295,7 @@ jobs:
   build-macos:
     name: Build and smoke macOS Universal
     needs: validate
-    runs-on: macos-26
+    runs-on: macos-26-intel
     timeout-minutes: 60
     outputs:
       artifact_id: ${{ steps.macos-package.outputs.artifact-id }}

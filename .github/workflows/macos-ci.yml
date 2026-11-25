@@ -3,6 +3,7 @@ name: macOS CI
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
     inputs:
       runner:
@@ -20,7 +21,7 @@ permissions:
 
 jobs:
   macos:
-    name: macOS package and smoke
+    name: macOS checks
     runs-on: ${{ inputs.runner || 'macos-26-intel' }}
     steps:
       - uses: actions/checkout@v7
@@ -64,19 +65,3 @@ jobs:
           cargo test --locked --manifest-path src-tauri/Cargo.toml \
             providers::credential_store::tests::system_credential_store_round_trip_when_requested \
             -- --exact --nocapture
-
-      - name: Build macOS DMG
-        run: pnpm tauri build --bundles dmg
-        env:
-          APPLE_SIGNING_IDENTITY: '-'
-
-      - name: Smoke test packaged application
-        uses: ./.github/actions/platform-smoke
-
-      - name: Upload macOS DMG
-        uses: actions/upload-artifact@v7
-        with:
-          name: OpenQuota-macOS-DMG
-          path: src-tauri/target/release/bundle/dmg/*.dmg
-          retention-days: 3
-          if-no-files-found: error
