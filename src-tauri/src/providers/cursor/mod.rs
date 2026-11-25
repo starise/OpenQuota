@@ -707,6 +707,14 @@ mod tests {
                 [],
             )
             .unwrap();
+        let old_access = jwt("google-oauth2|old_user");
+        connection
+            .execute(
+                "INSERT INTO ItemTable (key, value) VALUES
+                 ('cursorAuth/accessToken', ?1), ('cursorAuth/refreshToken', 'refresh-token')",
+                [&old_access],
+            )
+            .unwrap();
         drop(connection);
         let refreshed = jwt("google-oauth2|user_abc123");
         let (base, requests) = routing_server(refreshed.clone());
@@ -726,7 +734,7 @@ mod tests {
             client: CursorClient::with_endpoints(endpoints).unwrap(),
         };
         let auth = CursorAuthState {
-            access_token: Some(jwt("google-oauth2|old_user")),
+            access_token: Some(old_access),
             refresh_token: Some("refresh-token".into()),
             source: CursorAuthSource::Sqlite(database.clone()),
         };

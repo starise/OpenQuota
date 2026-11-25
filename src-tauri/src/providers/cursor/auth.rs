@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{DateTime, Duration, Utc};
-use rusqlite::{Connection, OpenFlags, OptionalExtension};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior};
 use serde_json::Value;
 
 use crate::providers::credential_store::{read_generic_password, write_generic_password};
@@ -74,10 +74,14 @@ impl CursorAuthState {
 
     pub fn save_access_token(&mut self, access_token: String) -> Result<(), CursorError> {
         match &self.source {
-            CursorAuthSource::Sqlite(path) => {
-                write_state_value(path, ACCESS_TOKEN_KEY, &access_token)
-            }
+            CursorAuthSource::Sqlite(path) => self.save_sqlite_access_token(path, &access_token),
             CursorAuthSource::Keychain { account } => {
+                // shortcut: separate keychain reads and writes, use a conditional write if available.
+                if read_keychain_value(ACCESS_TOKEN_SERVICE, account)? != self.access_token
+                    || read_keychain_value(REFRESH_TOKEN_SERVICE, account)? != self.refresh_token
+                {
+                    return Err(CursorError::AuthWrite);
+                }
                 write_generic_password(ACCESS_TOKEN_SERVICE, account, access_token.as_bytes())
                     .map_err(|_| CursorError::AuthWrite)
             }
@@ -85,6 +89,28 @@ impl CursorAuthState {
         }?;
         self.access_token = Some(access_token);
         Ok(())
+    }
+
+    fn save_sqlite_access_token(&self, path: &Path, access_token: &str) -> Result<(), CursorError> {
+        let mut connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)
+            .map_err(|_| CursorError::AuthWrite)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| CursorError::AuthWrite)?;
+        let current_access =
+            read_state_value(&transaction, ACCESS_TOKEN_KEY).map_err(|_| CursorError::AuthWrite)?;
+        let current_refresh = read_state_value(&transaction, REFRESH_TOKEN_KEY)
+            .map_err(|_| CursorError::AuthWrite)?;
+        if current_access != self.access_token || current_refresh != self.refresh_token {
+            return Err(CursorError::AuthWrite);
+        }
+        transaction
+            .execute(
+                "INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?1, ?2)",
+                (ACCESS_TOKEN_KEY, access_token),
+            )
+            .map_err(|_| CursorError::AuthWrite)?;
+        transaction.commit().map_err(|_| CursorError::AuthWrite)
     }
 }
 
@@ -148,16 +174,21 @@ fn select_auth_state(
 }
 
 fn load_sqlite_auth(path: &Path) -> Option<(CursorAuthState, Option<String>)> {
-    if !path.is_file() {
-        return None;
-    }
-    let access_token = read_state_value(path, ACCESS_TOKEN_KEY);
-    let refresh_token = read_state_value(path, REFRESH_TOKEN_KEY);
+    let mut connection = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .ok()?;
+    let transaction = connection.transaction().ok()?;
+    let access_token = read_state_value(&transaction, ACCESS_TOKEN_KEY).ok()?;
+    let refresh_token = read_state_value(&transaction, REFRESH_TOKEN_KEY).ok()?;
     if access_token.is_none() && refresh_token.is_none() {
         return None;
     }
-    let membership =
-        read_state_value(path, MEMBERSHIP_TYPE_KEY).map(|value| value.to_ascii_lowercase());
+    let membership = read_state_value(&transaction, MEMBERSHIP_TYPE_KEY)
+        .ok()
+        .flatten()
+        .map(|value| value.to_ascii_lowercase());
     Some((
         CursorAuthState {
             access_token,
@@ -168,12 +199,7 @@ fn load_sqlite_auth(path: &Path) -> Option<(CursorAuthState, Option<String>)> {
     ))
 }
 
-fn read_state_value(path: &Path, key: &str) -> Option<String> {
-    let connection = Connection::open_with_flags(
-        path,
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )
-    .ok()?;
+fn read_state_value(connection: &Connection, key: &str) -> rusqlite::Result<Option<String>> {
     connection
         .query_row(
             "SELECT value FROM ItemTable WHERE key = ?1 LIMIT 1",
@@ -181,26 +207,17 @@ fn read_state_value(path: &Path, key: &str) -> Option<String> {
             |row| row.get::<_, String>(0),
         )
         .optional()
-        .ok()
-        .flatten()
-        .and_then(non_empty)
-}
-
-fn write_state_value(path: &Path, key: &str, value: &str) -> Result<(), CursorError> {
-    let connection = Connection::open(path).map_err(|_| CursorError::AuthWrite)?;
-    connection
-        .execute(
-            "INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?1, ?2)",
-            (key, value),
-        )
-        .map_err(|_| CursorError::AuthWrite)?;
-    Ok(())
+        .map(|value| value.and_then(non_empty))
 }
 
 fn load_keychain_auth() -> Option<CursorAuthState> {
     for account in keychain_accounts() {
-        let access_token = read_keychain_value(ACCESS_TOKEN_SERVICE, &account);
-        let refresh_token = read_keychain_value(REFRESH_TOKEN_SERVICE, &account);
+        let access_token = read_keychain_value(ACCESS_TOKEN_SERVICE, &account)
+            .ok()
+            .flatten();
+        let refresh_token = read_keychain_value(REFRESH_TOKEN_SERVICE, &account)
+            .ok()
+            .flatten();
         if access_token.is_some() || refresh_token.is_some() {
             return Some(CursorAuthState {
                 access_token,
@@ -212,12 +229,12 @@ fn load_keychain_auth() -> Option<CursorAuthState> {
     None
 }
 
-fn read_keychain_value(service: &str, account: &str) -> Option<String> {
+fn read_keychain_value(service: &str, account: &str) -> Result<Option<String>, CursorError> {
     read_generic_password(service, account)
-        .ok()
-        .flatten()
-        .and_then(|bytes| String::from_utf8(bytes).ok())
-        .and_then(non_empty)
+        .map_err(|_| CursorError::AuthWrite)?
+        .map(|bytes| String::from_utf8(bytes).map_err(|_| CursorError::AuthWrite))
+        .transpose()
+        .map(|value| value.and_then(non_empty))
 }
 
 fn keychain_accounts() -> Vec<String> {
@@ -359,12 +376,14 @@ mod tests {
                 (ACCESS_TOKEN_KEY, "old"),
             )
             .unwrap();
-        drop(connection);
-
         let (mut auth, _) = load_sqlite_auth(&path).unwrap();
+        let mut old_session = auth.clone();
         auth.save_access_token("new'quoted".into()).unwrap();
+        assert!(old_session.save_access_token("outdated".into()).is_err());
         assert_eq!(
-            read_state_value(&path, ACCESS_TOKEN_KEY).as_deref(),
+            read_state_value(&connection, ACCESS_TOKEN_KEY)
+                .unwrap()
+                .as_deref(),
             Some("new'quoted")
         );
     }
