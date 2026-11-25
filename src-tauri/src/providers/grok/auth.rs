@@ -36,7 +36,7 @@ pub struct GrokAuthEntry {
 
 #[derive(Debug, Clone)]
 pub struct GrokAuthState {
-    document: Value,
+    original_entry: GrokAuthEntry,
     pub entry_key: String,
     pub entry: GrokAuthEntry,
     pub token: String,
@@ -77,7 +77,7 @@ impl GrokAuthStore {
                 let entry = serde_json::from_value::<GrokAuthEntry>(value.clone()).ok()?;
                 let token = trimmed(entry.key.as_deref())?.to_owned();
                 Some(GrokAuthState {
-                    document: document.clone(),
+                    original_entry: entry.clone(),
                     entry_key: entry_key.clone(),
                     entry,
                     token,
@@ -146,40 +146,28 @@ impl GrokAuthStore {
         state.entry.expires_at = Some(expiry.to_rfc3339_opts(SecondsFormat::Millis, true));
     }
 
-    /// Re-reads the current document before replacing it so another account and unknown fields are
-    /// retained. A present but unreadable file is never rebuilt from stale in-memory state.
+    /// Re-reads the current document to retain other accounts and reject a changed login.
     pub fn save(&self, state: &mut GrokAuthState) -> Result<(), GrokError> {
-        let mut document = if self.path.exists() {
-            let text = fs::read_to_string(&self.path).map_err(|_| GrokError::InvalidAuth)?;
-            parse_auth_document(&text).ok_or(GrokError::InvalidAuth)?
-        } else {
-            state.document.clone()
-        };
-        let entries = document.as_object_mut().ok_or(GrokError::InvalidAuth)?;
-        let mut entry = entries
+        let current = fs::read_to_string(&self.path).map_err(|_| GrokError::InvalidAuth)?;
+        let mut document = parse_auth_document(&current).ok_or(GrokError::InvalidAuth)?;
+        let entry = document
             .get(&state.entry_key)
-            .and_then(Value::as_object)
-            .cloned()
-            .or_else(|| {
-                state
-                    .document
-                    .get(&state.entry_key)
-                    .and_then(Value::as_object)
-                    .cloned()
-            })
-            .unwrap_or_default();
-        set_optional_string(&mut entry, "key", state.entry.key.as_deref());
-        set_optional_string(
-            &mut entry,
-            "refresh_token",
-            state.entry.refresh_token.as_deref(),
-        );
-        set_optional_string(&mut entry, "id_token", state.entry.id_token.as_deref());
-        set_optional_string(&mut entry, "expires_at", state.entry.expires_at.as_deref());
-        entries.insert(state.entry_key.clone(), Value::Object(entry));
+            .ok_or(GrokError::InvalidAuth)?;
+        let current_login = serde_json::from_value::<GrokAuthEntry>(entry.clone())
+            .map_err(|_| GrokError::InvalidAuth)?;
+        if current_login != state.original_entry {
+            return Err(GrokError::AuthWrite);
+        }
+        let entry = document[&state.entry_key]
+            .as_object_mut()
+            .ok_or(GrokError::InvalidAuth)?;
+        set_optional_string(entry, "key", state.entry.key.as_deref());
+        set_optional_string(entry, "refresh_token", state.entry.refresh_token.as_deref());
+        set_optional_string(entry, "id_token", state.entry.id_token.as_deref());
+        set_optional_string(entry, "expires_at", state.entry.expires_at.as_deref());
 
-        write_private_json_atomic(&self.path, &document)?;
-        state.document = document;
+        write_private_json_atomic(&self.path, &document, &current)?;
+        state.original_entry = state.entry.clone();
         Ok(())
     }
 }
@@ -190,9 +178,12 @@ fn set_optional_string(object: &mut Map<String, Value>, key: &str, value: Option
     }
 }
 
-fn write_private_json_atomic(path: &Path, document: &Value) -> Result<(), GrokError> {
+fn write_private_json_atomic(
+    path: &Path,
+    document: &Value,
+    expected: &str,
+) -> Result<(), GrokError> {
     let parent = path.parent().ok_or(GrokError::AuthWrite)?;
-    fs::create_dir_all(parent).map_err(|_| GrokError::AuthWrite)?;
     let mut temporary = NamedTempFile::new_in(parent).map_err(|_| GrokError::AuthWrite)?;
     #[cfg(unix)]
     {
@@ -211,6 +202,10 @@ fn write_private_json_atomic(path: &Path, document: &Value) -> Result<(), GrokEr
         .as_file()
         .sync_all()
         .map_err(|_| GrokError::AuthWrite)?;
+    // shortcut: the CLI can replace the file after this check, share a lock if it supports one.
+    if fs::read_to_string(path).map_err(|_| GrokError::AuthWrite)? != expected {
+        return Err(GrokError::AuthWrite);
+    }
     temporary.persist(path).map_err(|_| GrokError::AuthWrite)?;
     Ok(())
 }
@@ -382,6 +377,25 @@ mod tests {
         assert!(matches!(error, GrokError::InvalidAuth));
         assert_eq!(fs::read_to_string(path).unwrap(), "{ corrupt");
         assert!(!error.to_string().contains("new-secret"));
+    }
+
+    #[test]
+    fn save_requires_the_original_login_to_still_exist() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("auth.json");
+        fs::write(&path, r#"{"account":{"key":"old"}}"#).unwrap();
+        let store = GrokAuthStore::for_path(path.clone());
+        let mut state = store.load_candidates().unwrap().remove(0);
+        state.entry.key = Some("refreshed".into());
+
+        for replacement in [r#"{"account":{"key":"new"}}"#, "{}"] {
+            fs::write(&path, replacement).unwrap();
+            assert!(store.save(&mut state).is_err());
+            assert_eq!(fs::read_to_string(&path).unwrap(), replacement);
+        }
+        fs::remove_file(&path).unwrap();
+        assert!(store.save(&mut state).is_err());
+        assert!(!path.exists());
     }
 
     #[cfg(unix)]
