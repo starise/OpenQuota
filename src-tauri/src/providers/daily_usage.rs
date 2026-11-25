@@ -157,9 +157,12 @@ impl DailyUsageAccumulator {
     pub fn build(self, now: DateTime<Utc>, source_note: &str) -> UsageHistory {
         let today = now.with_timezone(&Local).date_naive();
         let yesterday = today.checked_sub_days(Days::new(1));
+        let since = today
+            .checked_sub_days(crate::policy::USAGE_HISTORY_LOOKBACK)
+            .unwrap_or(NaiveDate::MIN);
         let daily = self
             .days
-            .iter()
+            .range(since..=today)
             .rev()
             .filter(|(_, day)| has_usage(day))
             .map(|(date, day)| DailyUsage {
@@ -178,14 +181,14 @@ impl DailyUsageAccumulator {
             yesterday.and_then(|date| self.period_for_days(&[date], source_note));
         let active_days = self
             .days
-            .iter()
+            .range(since..=today)
             .filter(|(_, day)| has_usage(day))
             .map(|(date, _)| *date)
             .collect::<Vec<_>>();
         let mut unknown_models = self
             .unknown_models_by_day
-            .values()
-            .flat_map(|models| models.iter().cloned())
+            .range(since..=today)
+            .flat_map(|(_, models)| models.iter().cloned())
             .collect::<HashSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
@@ -455,6 +458,26 @@ mod tests {
         );
         assert_eq!(history.last_30_days.as_ref().unwrap().tokens, 1_000);
         assert_eq!(history.daily.len(), 2);
+    }
+
+    #[test]
+    fn last_30_days_includes_today_and_the_previous_29_local_dates() {
+        let now = chrono::Local
+            .with_ymd_and_hms(2026, 11, 25, 12, 0, 0)
+            .unwrap()
+            .to_utc();
+        let mut accumulator = DailyUsageAccumulator::default();
+        accumulator.add(day(2026, 10, 26), 100, 1.0, "too old");
+        accumulator.add(day(2026, 10, 27), 2, 2.0, "first day");
+        accumulator.add(day(2026, 11, 25), 3, 3.0, "today");
+        accumulator.add(day(2026, 11, 26), 100, 1.0, "future");
+        accumulator.add_unknown_model(day(2026, 10, 26), "unknown outside the window");
+
+        let history = accumulator.build(now, "From test logs");
+
+        assert_eq!(history.last_30_days.unwrap().tokens, 5);
+        assert_eq!(history.daily.len(), 2);
+        assert!(history.unknown_models.is_empty());
     }
 
     #[test]

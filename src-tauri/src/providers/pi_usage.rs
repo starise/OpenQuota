@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use chrono::{DateTime, Days, Local, NaiveDate, Utc};
+use chrono::{DateTime, Local, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use walkdir::WalkDir;
@@ -97,7 +97,7 @@ fn scan_directory_into(
     let since = now
         .with_timezone(&Local)
         .date_naive()
-        .checked_sub_days(Days::new(30))
+        .checked_sub_days(crate::policy::USAGE_HISTORY_LOOKBACK)
         .unwrap_or(NaiveDate::MIN);
     Ok(aggregate_into(
         deduplicate(events),

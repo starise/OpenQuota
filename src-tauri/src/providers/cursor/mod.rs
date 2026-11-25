@@ -5,7 +5,7 @@ pub mod mapper;
 
 use std::sync::Arc;
 
-use chrono::{Days, Local, TimeZone, Utc};
+use chrono::{Local, TimeZone, Utc};
 use reqwest::StatusCode;
 use serde_json::Value;
 use thiserror::Error;
@@ -405,7 +405,9 @@ impl CursorProvider {
 
     fn fetch_usage_history(&self, access_token: &str, now: chrono::DateTime<Utc>) -> UsageHistory {
         let local_now = now.with_timezone(&Local);
-        let start_date = local_now.date_naive().checked_sub_days(Days::new(29));
+        let start_date = local_now
+            .date_naive()
+            .checked_sub_days(crate::policy::USAGE_HISTORY_LOOKBACK);
         let Some(start) = start_date
             .and_then(|date| date.and_hms_opt(0, 0, 0))
             .and_then(|date| Local.from_local_datetime(&date).earliest())

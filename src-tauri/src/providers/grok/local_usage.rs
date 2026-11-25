@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use chrono::{DateTime, Days, Local, Utc};
+use chrono::{DateTime, Local, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -197,7 +197,9 @@ fn model_id(message: &str, context: &Map<String, Value>) -> Option<String> {
 
 fn aggregate(events: Vec<TokenEvent>, now: DateTime<Utc>, pricing: &ModelPricing) -> UsageHistory {
     let today = now.with_timezone(&Local).date_naive();
-    let since = today.checked_sub_days(Days::new(30)).unwrap_or(today);
+    let since = today
+        .checked_sub_days(crate::policy::USAGE_HISTORY_LOOKBACK)
+        .unwrap_or(today);
     let mut accumulator = DailyUsageAccumulator::default();
 
     for event in events {

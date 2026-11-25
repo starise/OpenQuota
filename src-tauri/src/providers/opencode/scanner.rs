@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::PathBuf};
 
-use chrono::{DateTime, Days, Local, Utc};
+use chrono::{DateTime, Local, Utc};
 
 use crate::{
     models::UsageHistory, pricing::ModelPricing, providers::daily_usage::DailyUsageAccumulator,
@@ -176,7 +176,9 @@ fn better_record(candidate: &UsageRecord, current: &UsageRecord) -> bool {
 
 fn aggregate_history(records: &[UsageRecord], now: DateTime<Utc>) -> UsageHistory {
     let today = now.with_timezone(&Local).date_naive();
-    let since = today.checked_sub_days(Days::new(30)).unwrap_or(today);
+    let since = today
+        .checked_sub_days(crate::policy::USAGE_HISTORY_LOOKBACK)
+        .unwrap_or(today);
     let mut accumulator = DailyUsageAccumulator::default();
     for record in records {
         if record.timestamp > now {

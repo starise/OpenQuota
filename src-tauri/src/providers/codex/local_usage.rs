@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use chrono::{DateTime, Days, Local, NaiveDate, Utc};
+use chrono::{DateTime, Local, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use walkdir::WalkDir;
@@ -48,7 +48,7 @@ pub fn scan_local_usage(
     let since_date = now
         .with_timezone(&Local)
         .date_naive()
-        .checked_sub_days(Days::new(30))
+        .checked_sub_days(crate::policy::USAGE_HISTORY_LOOKBACK)
         .unwrap_or(NaiveDate::MIN);
     let events = scan_codex_events(storage, &homes, since_date)?;
 
@@ -492,7 +492,9 @@ fn aggregate_into(
     accumulator: &mut DailyUsageAccumulator,
 ) {
     let today = now.with_timezone(&Local).date_naive();
-    let since = today.checked_sub_days(Days::new(30)).unwrap_or(today);
+    let since = today
+        .checked_sub_days(crate::policy::USAGE_HISTORY_LOOKBACK)
+        .unwrap_or(today);
     let mut seen = HashSet::new();
 
     for event in events {
