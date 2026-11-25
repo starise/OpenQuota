@@ -76,19 +76,20 @@ impl ModelPricing {
         if let Some(rates) = self.supplement.pricing.get(name) {
             return Some(*rates);
         }
-        if let Some((_, rates)) = self.primary.find_exact(name) {
+        if let Some((_, rates)) = self
+            .primary
+            .find_exact(name)
+            .or_else(|| self.secondary.find_exact(name))
+        {
             return Some(rates);
         }
         if let Some(rates) = self.fast_variant(name) {
             return Some(rates);
         }
         if name.ends_with("-fast") {
-            return self.secondary.find_exact(name).map(|(_, rates)| rates);
+            return None;
         }
-        if let Some((_, rates)) = self.primary.find_fuzzy(name) {
-            return Some(rates);
-        }
-        self.secondary.find_exact(name).map(|(_, rates)| rates)
+        self.primary.find_fuzzy(name).map(|(_, rates)| rates)
     }
 
     fn fast_variant(&self, name: &str) -> Option<ModelRates> {
@@ -113,8 +114,8 @@ impl ModelPricing {
         }
         self.primary
             .find_exact(base)
-            .or_else(|| self.primary.find_fuzzy(base))
             .or_else(|| self.secondary.find_exact(base))
+            .or_else(|| self.primary.find_fuzzy(base))
     }
 }
 
@@ -249,5 +250,19 @@ mod tests {
             .resolve("provider/secondary-model-20260715")
             .is_some());
         assert!(model_pricing.resolve("secondary-model").is_none());
+    }
+
+    #[test]
+    fn exact_secondary_model_beats_a_primary_variant() {
+        let model_pricing = pricing(
+            None,
+            &[("gateway/grok-3-mini-fast", rates(0.6, 4.0))],
+            &[("grok-3", rates(3.0, 15.0))],
+        );
+        let resolved = model_pricing.resolve("grok-3").unwrap();
+        assert_eq!(
+            (resolved.input_per_million, resolved.output_per_million),
+            (3.0, 15.0)
+        );
     }
 }
