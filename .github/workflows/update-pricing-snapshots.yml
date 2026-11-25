@@ -26,7 +26,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 26
 
       - name: Refresh pricing snapshots
         run: node scripts/update_pricing_snapshots.mjs
