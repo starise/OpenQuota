@@ -50,6 +50,7 @@
   } from './lib/shareCard';
   import SettingsScreen from './lib/SettingsScreen.svelte';
   import { SettingsController } from './lib/settingsController.svelte';
+  import Tooltip from './lib/Tooltip.svelte';
   import type { SpendProjection } from './lib/totalSpend';
   import type { AppSettings, UsageViewState } from './lib/types';
   import { nextUpdateLabel, UpdateController } from './lib/updateController.svelte';
@@ -810,7 +811,13 @@
   {#if settingsState}
     {#if screen !== 'dashboard'}
       <header class="screen-header app-top-bar">
-        <button type="button" onclick={back} aria-label="Back" data-tooltip="Back">
+        <button
+          type="button"
+          onclick={back}
+          aria-label="Back"
+          data-tooltip="Back"
+          data-tooltip-align="left"
+        >
           <Icon name="back" size={16} strokeWidth={2.2} />
         </button>
         <h1>{topBarTitle()}</h1>
@@ -820,7 +827,6 @@
             type="button"
             onclick={requestCustomizationReset}
             aria-label="Reset all customization"
-            data-tooltip="Reset All Customization"
             ><Icon name="reset" size={15} strokeWidth={2} /></button
           >
         {:else if screen.startsWith('provider:')}
@@ -830,7 +836,6 @@
             disabled={resettingProviderId !== null}
             onclick={() => resetProviderCustomization(screen.slice(9))}
             aria-label={`Reset ${topBarTitle()}`}
-            data-tooltip={`Reset ${topBarTitle()}`}
             ><Icon name="reset" size={15} strokeWidth={2} /></button
           >
         {:else}
@@ -952,6 +957,7 @@
                 aria-label={floatingWindow ? 'Return to Tray Popup' : 'Keep Window Open'}
                 aria-pressed={floatingWindow}
                 data-tooltip={floatingWindow ? 'Return to Tray Popup' : 'Keep Window Open'}
+                data-tooltip-placement="top"
                 onclick={toggleFloatingWindow}
               >
                 <Icon name={floatingWindow ? 'pin-filled' : 'pin'} size={14} strokeWidth={1.9} />
@@ -1118,6 +1124,7 @@
     ></div>
   {/if}
 </main>
+<Tooltip />
 
 <style>
   :global {
@@ -1484,18 +1491,6 @@
       outline-offset: 1px;
     }
 
-    .window-mode-toggle::after {
-      top: auto;
-      bottom: calc(100% + 7px);
-      transform: translate(-50%, 2px) scale(0.97);
-      transform-origin: bottom center;
-    }
-
-    .window-mode-toggle:hover::after,
-    .window-mode-toggle:focus-visible::after {
-      transform: translate(-50%, 0) scale(1);
-    }
-
     .options-menu {
       margin-left: auto;
     }
@@ -1589,10 +1584,6 @@
       overflow: hidden;
       color: var(--secondary);
       font-size: inherit;
-    }
-
-    .screen-header .text-button::after {
-      content: none;
     }
 
     .options-menu .menu-item,

@@ -133,6 +133,24 @@ describe('OpenQuota dashboard', () => {
     expect(container.querySelector('.floating-chrome')).not.toBeInTheDocument();
   });
 
+  it('shows the Extra Usage explanation while hovering the estimate icon', async () => {
+    render(App);
+    await fireEvent.click(await screen.findByRole('button', { name: 'Show more' }));
+
+    const estimate = within(screen.getByRole('group', { name: 'Extra Usage options' })).getByRole(
+      'img',
+      { name: 'Estimated value' },
+    );
+    await fireEvent.pointerOver(estimate);
+
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'Estimated locally, so it may differ from billed usage.',
+    );
+
+    await fireEvent.pointerOut(estimate);
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+  });
+
   it('toggles floating window mode from the footer pin when a tray is available', async () => {
     render(App);
     await screen.findByText('Plus');

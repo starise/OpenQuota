@@ -97,6 +97,7 @@
       <span
         class="icon-button icon-button--plain total-card__info"
         data-tooltip={`Only includes ${providerNames.join(' and ')}.`}
+        data-tooltip-align="left"
         aria-label={`Only includes ${providerNames.join(' and ')}`}
         role="img"><Icon name="about" size={13} strokeWidth={1.9} /></span
       >
@@ -106,6 +107,7 @@
       type="button"
       aria-label={`Share ${metricTitle()} Screenshot`}
       data-tooltip="Share Screenshot"
+      data-tooltip-align="right"
       onclick={share}
       ><Icon name={shareCopied ? 'check' : 'share'} size={14} strokeWidth={1.8} /></button
     >

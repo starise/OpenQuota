@@ -475,14 +475,18 @@
               ><Icon name="refresh" size={12} strokeWidth={2} /></span
             >
           {:else if state?.error}
-            <span class="provider-warning" data-tooltip={state.error} aria-hidden="true"
-              ><Icon name="warning" size={12} strokeWidth={2} /></span
+            <span
+              class="provider-warning"
+              data-tooltip={state.error}
+              data-tooltip-align="right"
+              aria-hidden="true"><Icon name="warning" size={12} strokeWidth={2} /></span
             >
           {:else if snapshot.warnings.length > 0}
             <span
               class="provider-warning"
               role="status"
               data-tooltip={snapshot.warnings.join('\n')}
+              data-tooltip-align="right"
               aria-label={snapshot.warnings.join(' ')}
               ><Icon name="warning" size={12} strokeWidth={2} /><span class="sr-only"
                 >{snapshot.warnings.join(' ')}</span

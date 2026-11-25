@@ -91,6 +91,7 @@
   <span
     >{label}{#if period?.unknownModels?.length}<i
         class="usage-label-warning"
+        data-tooltip-align="left"
         data-tooltip={unknownModelTooltip(
           period.unknownModels,
           Boolean(period.modelBreakdown?.models.length),
