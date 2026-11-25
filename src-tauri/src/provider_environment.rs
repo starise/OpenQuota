@@ -99,11 +99,9 @@ fn capture_login_shell_snapshot() -> Option<HashMap<String, String>> {
         }
     });
     let script = format!("printf '%s\\0' '{BEGIN}'; /usr/bin/env -0; printf '%s\\0' '{END}'");
-    let output = child_process::output_with_timeout(
-        child_process::background_command(&shell).args(["-i", "-l", "-c", &script]),
-        Duration::from_secs(5),
-    )
-    .ok()?;
+    let mut command = child_process::background_command(&shell);
+    command.args(["-i", "-l", "-c", &script]);
+    let output = child_process::output_with_timeout(command, Duration::from_secs(5)).ok()?;
     if !output.status.success() {
         return None;
     }

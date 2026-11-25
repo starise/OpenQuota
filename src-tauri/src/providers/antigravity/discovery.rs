@@ -76,17 +76,15 @@ $items = Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'language
 }
 ConvertTo-Json -InputObject @($items) -Compress -Depth 4
 "#;
-    let output = output_with_timeout(
-        background_command("powershell").args([
-            "-NoLogo",
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            script,
-        ]),
-        DISCOVERY_TIMEOUT,
-    )
-    .ok()?;
+    let mut command = background_command("powershell");
+    command.args([
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        script,
+    ]);
+    let output = output_with_timeout(command, DISCOVERY_TIMEOUT).ok()?;
     if !output.status.success() {
         return None;
     }
@@ -140,11 +138,9 @@ fn discover_unix() -> Option<LanguageServer> {
     let ps_program = "/bin/ps";
     #[cfg(not(target_os = "macos"))]
     let ps_program = "ps";
-    let output = output_with_timeout(
-        background_command(ps_program).args(["-ax", "-o", "pid=,command="]),
-        DISCOVERY_TIMEOUT,
-    )
-    .ok()?;
+    let mut command = background_command(ps_program);
+    command.args(["-ax", "-o", "pid=,command="]);
+    let output = output_with_timeout(command, DISCOVERY_TIMEOUT).ok()?;
     if !output.status.success() {
         return None;
     }
@@ -310,12 +306,12 @@ fn lsof_ports(pid: &str) -> Vec<u16> {
     #[cfg(not(target_os = "macos"))]
     let programs = ["/usr/bin/lsof", "/usr/sbin/lsof", "lsof"];
     for program in programs {
-        let Some(output) = output_with_timeout(
-            background_command(program).args(["-nP", "-iTCP", "-sTCP:LISTEN", "-a", "-p", pid]),
-            DISCOVERY_TIMEOUT,
-        )
-        .ok()
-        .filter(|output| output.status.success()) else {
+        let mut command = background_command(program);
+        command.args(["-nP", "-iTCP", "-sTCP:LISTEN", "-a", "-p", pid]);
+        let Some(output) = output_with_timeout(command, DISCOVERY_TIMEOUT)
+            .ok()
+            .filter(|output| output.status.success())
+        else {
             continue;
         };
         let Some(output) = String::from_utf8(output.stdout).ok() else {

@@ -20,12 +20,9 @@ pub(super) fn fetch_quotas() -> Option<Result<Vec<QuotaWindow>, AntigravityError
         Ok(directory) => directory,
         Err(_) => return Some(Err(AntigravityError::Unavailable)),
     };
-    let version = output_with_timeout(
-        agy_command(&binary)
-            .current_dir(work_dir.path())
-            .arg("--version"),
-        Duration::from_secs(3),
-    );
+    let mut command = agy_command(&binary);
+    command.current_dir(work_dir.path()).arg("--version");
+    let version = output_with_timeout(command, Duration::from_secs(3));
     let version = match version {
         Ok(output) if output.status.success() => output.stdout,
         _ => return Some(Err(AntigravityError::Unavailable)),
@@ -55,20 +52,19 @@ fn agy_command(binary: &Path) -> Command {
 }
 
 fn read_report(binary: &Path, work_dir: &Path) -> Result<Vec<QuotaWindow>, AntigravityError> {
-    let output = output_with_timeout(
-        agy_command(binary).current_dir(work_dir).args([
-            "-p",
-            "/usage",
-            "--output-format",
-            "json",
-            "--print-timeout",
-            "15s",
-            "--settings",
-            r#"{"disableSlashCommands":false}"#,
-        ]),
-        Duration::from_secs(20),
-    )
-    .map_err(|_| AntigravityError::Unavailable)?;
+    let mut command = agy_command(binary);
+    command.current_dir(work_dir).args([
+        "-p",
+        "/usage",
+        "--output-format",
+        "json",
+        "--print-timeout",
+        "15s",
+        "--settings",
+        r#"{"disableSlashCommands":false}"#,
+    ]);
+    let output = output_with_timeout(command, Duration::from_secs(20))
+        .map_err(|_| AntigravityError::Unavailable)?;
     if !output.status.success() {
         return Err(AntigravityError::Unavailable);
     }
