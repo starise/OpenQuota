@@ -485,9 +485,11 @@ fn aggregate_into(
                 model_name.unwrap_or("Unattributed"),
             );
         } else if tokens.total_tokens() > 0 {
-            if let Some(model) = model_name {
-                accumulator.add_unknown_model(date, model);
-            }
+            accumulator.add_unpriced(
+                date,
+                tokens.total_tokens(),
+                model_name.unwrap_or("Unattributed"),
+            );
         }
     }
 }
@@ -785,13 +787,13 @@ mod tests {
     }
 
     #[test]
-    fn unknown_usage_is_excluded_but_remains_visible_as_incomplete() {
+    fn unpriced_usage_keeps_tokens_and_marks_spend_incomplete() {
         let content = r#"{"timestamp":"2026-07-15T08:00:00Z","message":{"model":"claude-sonnet-4-5-20250929","usage":{"input_tokens":100,"output_tokens":10}}}
 {"timestamp":"2026-07-15T09:00:00Z","message":{"model":"future-unpriced-model","usage":{"input_tokens":500,"output_tokens":20}}}"#;
         let now = Utc.with_ymd_and_hms(2026, 7, 15, 12, 0, 0).unwrap();
         let history = aggregate(parse_jsonl(content), now, &test_bundled_pricing());
         let today = history.today.unwrap();
-        assert_eq!(today.tokens, 110);
+        assert_eq!(today.tokens, 630);
         assert!(!today.estimate_complete);
         assert_eq!(today.unknown_models, ["future-unpriced-model"]);
     }

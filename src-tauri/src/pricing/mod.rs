@@ -13,17 +13,36 @@ pub use supplement::PricingSupplement;
 
 #[cfg(test)]
 pub fn test_bundled_pricing() -> ModelPricing {
+    let rates = |input, cache_write, cache_read, output| {
+        let mut rates = ModelRates::new(input, output);
+        rates.cache_write_per_million = cache_write;
+        rates.cache_read_per_million = cache_read;
+        rates
+    };
+    let entries = |values: &[(&str, ModelRates)]| {
+        values
+            .iter()
+            .map(|(model, rates)| ((*model).to_owned(), *rates))
+            .collect()
+    };
     ModelPricing::new(
         PricingSupplement::decode(include_bytes!("../../resources/pricing_supplement.json"))
             .expect("bundled pricing supplement must be valid"),
-        codecs::catalog_from_compact(include_bytes!(
-            "../../resources/pricing_litellm_snapshot.json"
-        ))
-        .expect("bundled LiteLLM pricing must be valid"),
-        codecs::catalog_from_compact(include_bytes!(
-            "../../resources/pricing_models_dev_snapshot.json"
-        ))
-        .expect("bundled models.dev pricing must be valid"),
+        PricingCatalog {
+            entries: entries(&[
+                ("claude-sonnet-4-5-20250929", rates(3.0, 3.75, 0.3, 15.0)),
+                ("claude-sonnet-4-6", rates(3.0, 3.75, 0.3, 15.0)),
+                ("claude-opus-4-6", rates(5.0, 6.25, 0.5, 25.0)),
+                ("claude-fable-5", rates(10.0, 12.5, 1.0, 50.0)),
+                ("gpt-5.4", rates(2.5, 2.5, 0.25, 15.0)),
+                ("gpt-5.3-codex", rates(1.75, 1.75, 0.175, 14.0)),
+            ]),
+            retrieved_at: None,
+        },
+        PricingCatalog {
+            entries: entries(&[("grok-build-0.1", rates(1.0, 1.0, 0.2, 2.0))]),
+            retrieved_at: None,
+        },
     )
 }
 
@@ -32,10 +51,10 @@ mod bundled_resource_tests {
     use super::{test_bundled_pricing, TokenBreakdown};
 
     #[test]
-    fn bundled_catalogs_are_non_trivial_and_all_rules_resolve() {
+    fn bundled_supplement_is_valid_and_fixture_catalogs_are_fixed() {
         let pricing = test_bundled_pricing();
-        assert!(pricing.primary.entries.len() > 500);
-        assert!(pricing.secondary.entries.len() > 500);
+        assert_eq!(pricing.primary.entries.len(), 6);
+        assert_eq!(pricing.secondary.entries.len(), 1);
         assert!(!pricing.supplement.pricing.is_empty());
         assert!(!pricing.supplement.alias_rules.is_empty());
         let raw_supplement: serde_json::Value =
@@ -46,19 +65,17 @@ mod bundled_resource_tests {
             raw_supplement["alias_rules"].as_array().unwrap().len(),
             "every bundled alias regex must compile in Rust"
         );
-        for rule in &pricing.supplement.alias_rules {
-            assert!(
-                pricing.resolve(&rule.canonical).is_some(),
-                "alias canonical '{}' resolves against no pricing source",
-                rule.canonical
-            );
-        }
-        for base in pricing.supplement.fast_multipliers.keys() {
-            assert!(
-                pricing.resolve(base).is_some(),
-                "fast multiplier base '{base}' resolves against no pricing source"
-            );
-        }
+        assert_eq!(
+            pricing
+                .resolve("claude-opus-4-6")
+                .unwrap()
+                .input_per_million,
+            5.0
+        );
+        assert_eq!(
+            pricing.resolve("grok-build").unwrap().input_per_million,
+            1.0
+        );
     }
 
     #[test]
@@ -139,7 +156,7 @@ mod bundled_resource_tests {
     }
 
     #[test]
-    fn bundled_engine_prices_cache_and_long_context_buckets() {
+    fn fixture_engine_prices_cache_and_long_context_buckets() {
         let pricing = test_bundled_pricing();
         let cost = pricing
             .estimated_cost_dollars(

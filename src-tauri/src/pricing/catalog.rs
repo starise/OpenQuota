@@ -25,14 +25,6 @@ impl PricingCatalog {
                 right.len().cmp(&left.len()).then_with(|| left.cmp(right))
             })
     }
-
-    pub fn merging(mut self, other: PricingCatalog) -> Self {
-        self.entries.extend(other.entries);
-        if other.retrieved_at.is_some() {
-            self.retrieved_at = other.retrieved_at;
-        }
-        self
-    }
 }
 
 pub fn normalized_key(value: &str) -> String {

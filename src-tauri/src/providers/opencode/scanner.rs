@@ -198,8 +198,10 @@ fn aggregate_history(records: &[UsageRecord], now: DateTime<Utc>) -> UsageHistor
                 }
             }
         }
-        if record.incomplete_cost || (record.cost.is_none() && record.tokens > 0) {
-            accumulator.add_unknown_model(date, &record.model);
+        if record.cost.is_none() && record.tokens > 0 {
+            accumulator.add_unpriced(date, record.tokens, &record.model);
+        } else if record.incomplete_cost {
+            accumulator.mark_incomplete(date, &record.model);
         }
     }
     accumulator.build(now, USAGE_SOURCE_NOTE)

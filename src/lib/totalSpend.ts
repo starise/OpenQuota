@@ -51,6 +51,9 @@ export function projectSpend(
       ? usage.unknownModels.length === 0
       : !usage.daily.some((day) => day.date === dateKey && !day.estimateComplete);
   });
+  if (metric === 'costPerMillion' && !estimateComplete) {
+    return { slices: [], centerValue: null, costEstimated: false, estimateComplete };
+  }
   const slices = providers
     .flatMap((provider) => {
       const period = selectedPeriod(provider.usage, periodSelection);
@@ -84,8 +87,20 @@ export function projectSpend(
   };
 }
 
-export function emptySpendMessage(metric: AppSettings['totalSpendMetric']) {
-  if (metric === 'tokens') return 'No token data for this period';
+export function emptySpendMessage(
+  metric: AppSettings['totalSpendMetric'],
+  estimateComplete = true,
+) {
+  if (metric === 'tokens') {
+    return estimateComplete
+      ? 'No token data for this period'
+      : 'Token total may be incomplete until refreshed';
+  }
+  if (!estimateComplete) {
+    return metric === 'costPerMillion'
+      ? 'Cost/MTok unavailable: some usage is unpriced'
+      : 'Cost unavailable: some usage is unpriced';
+  }
   if (metric === 'costPerMillion') return 'No cost-per-token data for this period';
   return 'No cost data for this period';
 }

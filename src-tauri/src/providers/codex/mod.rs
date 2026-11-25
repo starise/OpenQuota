@@ -395,7 +395,10 @@ mod account_tests {
         let provider = CodexProvider {
             account_identity: None,
             storage: Arc::new(Storage::open(&directory.path().join("openquota.db")).unwrap()),
-            pricing: Arc::new(PricingStore::new(directory.path().join("pricing")).unwrap()),
+            pricing: Arc::new(
+                PricingStore::new_without_refresh_for_test(directory.path().join("pricing"))
+                    .unwrap(),
+            ),
             client: CodexClient::with_endpoints(&usage, &resets, &resets, Duration::from_secs(2))
                 .unwrap(),
         };
@@ -455,7 +458,10 @@ mod account_tests {
         let provider = CodexProvider {
             account_identity: None,
             storage: Arc::new(Storage::open(&directory.path().join("openquota.db")).unwrap()),
-            pricing: Arc::new(PricingStore::new(directory.path().join("pricing")).unwrap()),
+            pricing: Arc::new(
+                PricingStore::new_without_refresh_for_test(directory.path().join("pricing"))
+                    .unwrap(),
+            ),
             client: CodexClient::with_endpoints(&usage, &resets, &resets, Duration::from_secs(2))
                 .unwrap(),
         };
@@ -492,7 +498,9 @@ mod account_tests {
     fn cache_identity_tracks_the_launch_resolved_account() {
         let directory = tempdir().unwrap();
         let storage = Arc::new(Storage::open(&directory.path().join("openquota.db")).unwrap());
-        let pricing = Arc::new(PricingStore::new(directory.path().join("pricing")).unwrap());
+        let pricing = Arc::new(
+            PricingStore::new_without_refresh_for_test(directory.path().join("pricing")).unwrap(),
+        );
         let provider = CodexProvider {
             account_identity: Some("account-a".into()),
             storage: storage.clone(),

@@ -43,7 +43,7 @@ fn pricing() -> ModelPricing {
 }
 
 fn pricing_store(directory: &Path) -> Arc<PricingStore> {
-    Arc::new(PricingStore::new(directory.join("pricing")).unwrap())
+    Arc::new(PricingStore::new_without_refresh_for_test(directory.join("pricing")).unwrap())
 }
 
 fn test_client(url: &str) -> OpenCodeClient {
@@ -429,7 +429,9 @@ fn exact_zero_cost_is_usage_but_unknown_cost_stays_visible_as_incomplete() {
     );
     drop(unknown);
     let unknown_usage = scan(vec![unknown_path]).usage;
-    assert!(unknown_usage.today.is_none());
+    let today = unknown_usage.today.unwrap();
+    assert_eq!(today.tokens, 60);
+    assert_eq!(today.estimated_cost_usd, None);
     assert_eq!(unknown_usage.unknown_models, ["unknown-model"]);
 }
 

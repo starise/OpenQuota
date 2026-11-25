@@ -521,7 +521,7 @@ fn aggregate_into(
         if let Some(cost) = estimate_cost(&event, pricing) {
             accumulator.add(date, event.total, cost, event.model.trim());
         } else if event.total > 0 {
-            accumulator.add_unknown_model(date, &event.model);
+            accumulator.add_unpriced(date, event.total, &event.model);
         }
     }
 }
@@ -972,7 +972,7 @@ mod tests {
     }
 
     #[test]
-    fn period_breakdown_uses_model_names_and_excludes_unpriced_usage() {
+    fn period_breakdown_includes_unpriced_models() {
         let now = Utc.with_ymd_and_hms(2026, 7, 10, 12, 0, 0).unwrap();
         let content = r#"{"timestamp":"2026-07-10T08:00:00Z","type":"event_msg","payload":{"type":"token_count","model":"gpt-5.4","info":{"last_token_usage":{"input_tokens":1000,"output_tokens":100,"total_tokens":1100}}}}
 {"timestamp":"2026-07-10T09:00:00Z","type":"event_msg","payload":{"type":"token_count","model":"gpt-5.3-codex","info":{"last_token_usage":{"input_tokens":800,"output_tokens":100,"total_tokens":900}}}}
@@ -982,7 +982,7 @@ mod tests {
         let today = history.today.unwrap();
         let breakdown = today.model_breakdown.unwrap();
 
-        assert_eq!(today.tokens, 2_000);
+        assert_eq!(today.tokens, 2_500);
         assert_eq!(today.unknown_models, ["future-unpriced-model"]);
         assert_eq!(
             breakdown
@@ -990,22 +990,47 @@ mod tests {
                 .iter()
                 .map(|entry| entry.model.as_str())
                 .collect::<Vec<_>>(),
-            ["gpt-5.4", "gpt-5.3-codex"]
+            ["gpt-5.4", "gpt-5.3-codex", "future-unpriced-model"]
         );
         assert_eq!(breakdown.source_note, "From your Codex logs (estimated)");
     }
 
     #[test]
-    fn unknown_only_usage_does_not_create_spend_periods() {
+    fn unpriced_usage_keeps_tokens_without_a_dollar_estimate() {
         let now = Utc.with_ymd_and_hms(2026, 7, 10, 12, 0, 0).unwrap();
-        let content = r#"{"timestamp":"2026-07-10T10:00:00Z","type":"event_msg","payload":{"type":"token_count","model":"future-unpriced-model","info":{"last_token_usage":{"input_tokens":400,"output_tokens":100,"total_tokens":500}}}}"#;
-        let pricing = test_bundled_pricing();
-        let history = aggregate(parse_jsonl(content), now, &pricing);
+        let content = r#"{"timestamp":"2026-07-10T10:00:00Z","type":"event_msg","payload":{"type":"token_count","model":"future-unpriced-model","info":{"last_token_usage":{"input_tokens":500000,"output_tokens":0,"total_tokens":500000}}}}"#;
+        let events = parse_jsonl(content);
+        let pricing = ModelPricing::new(
+            PricingSupplement::default(),
+            PricingCatalog::default(),
+            PricingCatalog::default(),
+        );
+        let history = aggregate(events.clone(), now, &pricing);
 
-        assert!(history.today.is_none());
-        assert!(history.last_30_days.is_none());
+        let today = history.today.unwrap();
+        assert_eq!(today.tokens, 500_000);
+        assert_eq!(today.estimated_cost_usd, None);
+        assert_eq!(today.model_breakdown.unwrap().models[0].cost_usd, None);
+        assert_eq!(history.last_30_days.unwrap().tokens, 500_000);
+        assert_eq!(history.daily[0].tokens, 500_000);
         assert!(!history.daily[0].estimate_complete);
         assert_eq!(history.unknown_models, ["future-unpriced-model"]);
+
+        let pricing = ModelPricing::new(
+            PricingSupplement::default(),
+            PricingCatalog {
+                entries: HashMap::from([(
+                    "future-unpriced-model".into(),
+                    ModelRates::new(2.0, 4.0),
+                )]),
+                ..PricingCatalog::default()
+            },
+            PricingCatalog::default(),
+        );
+        let repriced = aggregate(events, now, &pricing).today.unwrap();
+        assert_eq!(repriced.tokens, 500_000);
+        assert_eq!(repriced.estimated_cost_usd, Some(1.0));
+        assert!(repriced.estimate_complete);
     }
 
     #[test]

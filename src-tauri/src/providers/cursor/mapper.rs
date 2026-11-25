@@ -500,16 +500,15 @@ pub fn usage_history(
     for row in rows {
         let date = row.date.with_timezone(&chrono::Local).date_naive();
         let tokens = row.tokens.total_tokens();
+        let model = row.model.trim();
+        let family = if model.is_empty() {
+            "Unattributed".to_owned()
+        } else {
+            pricing.display_family(model)
+        };
         match row.estimated_cost_usd {
-            Some(cost) => {
-                let family = if row.model.trim().is_empty() {
-                    "Unattributed".to_owned()
-                } else {
-                    pricing.display_family(row.model.trim())
-                };
-                accumulator.add_variant(date, tokens, cost, &family, row.model.trim());
-            }
-            None if tokens > 0 => accumulator.add_unknown_model(date, &row.model),
+            Some(cost) => accumulator.add_variant(date, tokens, cost, &family, model),
+            None if tokens > 0 => accumulator.add_unpriced_variant(date, tokens, &family, model),
             None => {}
         }
     }
@@ -871,10 +870,7 @@ mod tests {
 
         let history = usage_history(&rows, now, &pricing);
         let today = history.today.unwrap();
-        assert_eq!(
-            today.tokens, 400,
-            "unpriced tokens stay out of coherent totals"
-        );
+        assert_eq!(today.tokens, 450);
         assert_eq!(today.estimated_cost_usd, Some(4.01));
         assert_eq!(today.unknown_models, ["unknown-cursor-model"]);
         let models = today.model_breakdown.unwrap().models;

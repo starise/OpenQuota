@@ -791,7 +791,9 @@ mod tests {
     fn account_change_clears_live_usage_and_rate_limit_cache() {
         let directory = tempdir().unwrap();
         let storage = Arc::new(Storage::open(&directory.path().join("openquota.db")).unwrap());
-        let pricing = Arc::new(PricingStore::new(directory.path().join("pricing")).unwrap());
+        let pricing = Arc::new(
+            PricingStore::new_without_refresh_for_test(directory.path().join("pricing")).unwrap(),
+        );
         let provider = ClaudeProvider::new(storage, pricing).unwrap();
         let snapshot = ProviderSnapshot {
             provider_id: "claude".into(),
@@ -892,7 +894,9 @@ mod tests {
         });
 
         let storage = Arc::new(Storage::open(&directory.path().join("openquota.db")).unwrap());
-        let pricing = Arc::new(PricingStore::new(directory.path().join("pricing")).unwrap());
+        let pricing = Arc::new(
+            PricingStore::new_without_refresh_for_test(directory.path().join("pricing")).unwrap(),
+        );
         let credential_scope = ClaudeCredentialScope::ConfigDir {
             path: account_root.clone(),
             keychain_literal: account_root.to_string_lossy().into_owned(),

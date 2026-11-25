@@ -90,8 +90,3 @@ Intel or `macos-26` or `macos-15` for Apple Silicon.
 For a transient failure, use **Re-run failed jobs** on the original release run. If you need to
 change the signing policy or replace a draft asset, start a full **Release** run for the tag so
 that all packages are built and smoke-tested again.
-
-## Verify pricing refreshes
-
-Run **Refresh bundled pricing** manually to generate and test candidate snapshots without
-committing them. Select **publish** on the default branch to commit a passing candidate.

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import Icon from './Icon.svelte';
-  import { formatMetricNumber, formatMetricValue } from './metricFormat';
+  import { formatMetricValue, formatUsageCost } from './metricFormat';
   import ModelUsageDetail from './ModelUsageDetail.svelte';
   import type { UsagePeriod } from './types';
 
@@ -19,29 +19,42 @@
     if (!value) return 'No data';
     const tokens = formatMetricValue(value.tokens, 'count', 'row', 'tokens');
     if (value.estimatedCostUsd === null) return tokens;
-    return `${formatMetricNumber(value.estimatedCostUsd, 'dollars', 'row')} · ${tokens}`;
+    return `${formatUsageCost(value.estimatedCostUsd, value.estimateComplete)} · ${tokens}`;
   }
   function valueTooltip(value: UsagePeriod | null) {
     if (!value) return undefined;
     if (value.modelBreakdown?.models.length) return undefined;
-    const note =
-      value.estimatedCostUsd !== null && value.costEstimated
-        ? 'Estimated locally, so it may be off'
-        : undefined;
+    const notes = [
+      ...(value.estimateComplete
+        ? []
+        : [
+            ...(value.estimatedCostUsd === null
+              ? ['Cost unavailable: some usage has no known price']
+              : []),
+            'Older saved token totals may be incomplete until refreshed',
+          ]),
+      ...(value.estimatedCostUsd !== null && value.costEstimated
+        ? ['Estimated locally, so it may be off']
+        : []),
+    ];
     const abbreviated =
       Math.abs(value.tokens) >= 1000 || Math.abs(value.estimatedCostUsd ?? 0) >= 1000;
-    if (!abbreviated && !note) return undefined;
+    if (!abbreviated && notes.length === 0) return undefined;
     const figures = [
       value.estimatedCostUsd === null
         ? undefined
-        : formatMetricNumber(value.estimatedCostUsd, 'dollars', 'full'),
+        : formatUsageCost(value.estimatedCostUsd, value.estimateComplete, 'full'),
       formatMetricValue(value.tokens, 'count', 'full', 'tokens'),
     ].filter(Boolean);
-    return [...figures, note].filter(Boolean).join('\n');
+    return [...figures, ...notes].join('\n');
   }
-  function unknownModelTooltip(models: string[]) {
+  function unknownModelTooltip(models: string[], hasModelDetail: boolean) {
     const heading = models.length === 1 ? 'Unknown model found' : 'Unknown models found';
-    return [heading, ...models.map((model) => `- ${model}`)].join('\n');
+    return [
+      heading,
+      ...(hasModelDetail ? ['Older saved token totals may be incomplete until refreshed.'] : []),
+      ...models.map((model) => `- ${model}`),
+    ].join('\n');
   }
   function scheduleShow(event: Event) {
     if (!period?.modelBreakdown?.models.length || open || showTimer) return;
@@ -78,7 +91,10 @@
   <span
     >{label}{#if period?.unknownModels?.length}<i
         class="usage-label-warning"
-        data-tooltip={unknownModelTooltip(period.unknownModels)}
+        data-tooltip={unknownModelTooltip(
+          period.unknownModels,
+          Boolean(period.modelBreakdown?.models.length),
+        )}
         aria-label="This period used a model with unknown pricing"
         ><Icon name="warning" size={10} strokeWidth={2.2} /></i
       >{/if}</span
@@ -99,6 +115,8 @@
   <ModelUsageDetail
     title={label}
     breakdown={period.modelBreakdown}
+    estimatedCostUsd={period.estimatedCostUsd}
+    estimateComplete={period.estimateComplete}
     top={detailTop}
     onEnter={keepOpen}
     onLeave={scheduleHide}

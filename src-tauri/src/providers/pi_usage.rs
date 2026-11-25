@@ -254,7 +254,7 @@ fn aggregate_into(
                 accumulator.add(date, event.reported_total_tokens, cost, model);
                 contributed = true;
             } else if event.reported_total_tokens > 0 {
-                accumulator.add_unknown_model(date, model);
+                accumulator.add_unpriced(date, event.reported_total_tokens, model);
                 contributed = true;
             }
         }
@@ -416,7 +416,7 @@ mod tests {
         ));
         let history = accumulator.build(now(), "From pi");
         let period = history.today.unwrap();
-        assert_eq!(period.tokens, 404);
+        assert_eq!(period.tokens, 606);
         assert!(period.cost_estimated);
         assert!((period.estimated_cost_usd.unwrap() - 0.502_43).abs() < 0.000_001);
         assert_eq!(period.unknown_models, ["missing-model"]);

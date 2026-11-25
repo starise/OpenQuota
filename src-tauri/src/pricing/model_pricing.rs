@@ -6,19 +6,31 @@ pub struct ModelPricing {
     pub supplement: PricingSupplement,
     pub primary: PricingCatalog,
     pub secondary: PricingCatalog,
+    retained: PricingCatalog,
     memo: Mutex<HashMap<String, Option<ModelRates>>>,
 }
 
 impl ModelPricing {
+    #[cfg(test)]
     pub fn new(
         supplement: PricingSupplement,
         primary: PricingCatalog,
         secondary: PricingCatalog,
     ) -> Self {
+        Self::with_retained(supplement, primary, secondary, PricingCatalog::default())
+    }
+
+    pub(crate) fn with_retained(
+        supplement: PricingSupplement,
+        primary: PricingCatalog,
+        secondary: PricingCatalog,
+        retained: PricingCatalog,
+    ) -> Self {
         Self {
             supplement,
             primary,
             secondary,
+            retained,
             memo: Mutex::new(HashMap::new()),
         }
     }
@@ -64,25 +76,30 @@ impl ModelPricing {
     }
 
     fn resolve_uncached(&self, model: &str) -> Option<ModelRates> {
-        if let Some(canonical) = self.supplement.canonical_name(model) {
-            if canonical != model {
-                return self.lookup(canonical).or_else(|| self.lookup(model));
-            }
-        }
-        self.lookup(model)
+        let canonical = self.supplement.canonical_name(model).unwrap_or(model);
+        let names = [Some(canonical), (canonical != model).then_some(model)];
+        let names = names.into_iter().flatten();
+        names
+            .clone()
+            .find_map(|name| self.exact_current(name))
+            .or_else(|| {
+                names
+                    .clone()
+                    .find_map(|name| self.retained.find_exact(name).map(|(_, rates)| rates))
+            })
+            .or_else(|| names.clone().find_map(|name| self.derived_or_fuzzy(name)))
     }
 
-    fn lookup(&self, name: &str) -> Option<ModelRates> {
-        if let Some(rates) = self.supplement.pricing.get(name) {
-            return Some(*rates);
-        }
-        if let Some((_, rates)) = self
-            .primary
-            .find_exact(name)
-            .or_else(|| self.secondary.find_exact(name))
-        {
-            return Some(rates);
-        }
+    fn exact_current(&self, name: &str) -> Option<ModelRates> {
+        self.supplement.pricing.get(name).copied().or_else(|| {
+            self.primary
+                .find_exact(name)
+                .or_else(|| self.secondary.find_exact(name))
+                .map(|(_, rates)| rates)
+        })
+    }
+
+    fn derived_or_fuzzy(&self, name: &str) -> Option<ModelRates> {
         if let Some(rates) = self.fast_variant(name) {
             return Some(rates);
         }
@@ -115,6 +132,7 @@ impl ModelPricing {
         self.primary
             .find_exact(base)
             .or_else(|| self.secondary.find_exact(base))
+            .or_else(|| self.retained.find_exact(base))
             .or_else(|| self.primary.find_fuzzy(base))
     }
 }
@@ -192,6 +210,18 @@ mod tests {
             model_pricing.resolve("gpt-x").unwrap().input_per_million,
             1.0
         );
+    }
+
+    #[test]
+    fn current_exact_raw_name_beats_a_retained_alias_target() {
+        let supplement =
+            r#"{"pricing":{},"alias_rules":[{"pattern":"^raw-model$","canonical":"old-model"}]}"#;
+        let mut model_pricing = pricing(Some(supplement), &[("raw-model", rates(2.0, 4.0))], &[]);
+        model_pricing
+            .retained
+            .entries
+            .insert("old-model".into(), rates(1.0, 2.0));
+        assert_eq!(model_pricing.resolve("raw-model"), Some(rates(2.0, 4.0)));
     }
 
     #[test]

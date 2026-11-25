@@ -1,8 +1,8 @@
 import type { ProviderCatalogIndex } from './metrics';
 import {
-  formatMetricNumber,
   formatMetricValue,
   formatSpendValue,
+  formatUsageCost,
   totalSpendRingCenter,
 } from './metricFormat';
 import { formatLimit, formatReset, projectPace } from './pacing';
@@ -13,7 +13,7 @@ import {
   providerIconViewBox,
 } from './providerIconPaths';
 import { fillRingSector, spendRingArcs } from './spendRing';
-import type { SpendProjection } from './totalSpend';
+import { emptySpendMessage, type SpendProjection } from './totalSpend';
 import type {
   AppSettings,
   DailyUsage,
@@ -377,8 +377,10 @@ function usagePeriod(snapshot: ProviderSnapshot, sourceId: string) {
 function usageReading(period: UsagePeriod | null) {
   if (!period) return 'No data';
   const tokens = formatMetricValue(period.tokens, 'count', 'row', 'tokens');
-  if (period.estimatedCostUsd === null) return tokens;
-  return `${formatMetricNumber(period.estimatedCostUsd, 'dollars', 'row')} · ${tokens}`;
+  if (period.estimatedCostUsd === null) {
+    return period.estimateComplete ? tokens : `${tokens} · cost unavailable`;
+  }
+  return `${formatUsageCost(period.estimatedCostUsd, period.estimateComplete)} · ${tokens}`;
 }
 
 function shareRowHeight(row: ShareRow) {
@@ -597,12 +599,7 @@ function drawSpendBody(
     context.fillStyle = palette.secondary;
     context.font = '12px system-ui';
     context.textAlign = 'center';
-    const empty =
-      metric === 'tokens'
-        ? 'No token data for this period'
-        : metric === 'costPerMillion'
-          ? 'No cost-per-token data for this period'
-          : 'No cost data for this period';
+    const empty = emptySpendMessage(metric, projection.estimateComplete);
     context.fillText(empty, canvasWidth / 2, top + TOTAL_SPEND_GEOMETRY.ringDiameter / 2 + 4);
     context.textAlign = 'left';
     return;
@@ -624,7 +621,11 @@ function drawSpendBody(
   context.fillText(center.primary, centerX, centerY - 1);
   context.fillStyle = palette.secondary;
   context.font = `600 ${TOTAL_SPEND_GEOMETRY.centerUnitFontSize}px system-ui`;
-  context.fillText(center.unit, centerX, centerY + 13);
+  context.fillText(
+    metric === 'cost' && !projection.estimateComplete ? `partial ${center.unit}` : center.unit,
+    centerX,
+    centerY + 13,
+  );
   context.textAlign = 'left';
 
   const legendLeft =
@@ -644,17 +645,21 @@ function drawSpendBody(
     context.fill();
     context.fillStyle = palette.text;
     context.font = `${TOTAL_SPEND_GEOMETRY.legendFontSize}px system-ui`;
+    const partial = metric === 'cost' && !slice.period.estimateComplete;
     fitText(
       context,
       catalog.displayName(slice.id, options.providerNames),
       legendLeft + 15,
       baseline,
-      62,
+      partial ? 48 : 62,
     );
     context.fillStyle = palette.secondary;
     context.font = `600 ${TOTAL_SPEND_GEOMETRY.legendFontSize}px system-ui`;
     context.textAlign = 'right';
-    fitTextRight(context, formatSpendValue(slice.value, metric), legendRight, baseline, 72);
+    const value = partial
+      ? formatUsageCost(slice.value, false)
+      : formatSpendValue(slice.value, metric);
+    fitTextRight(context, value, legendRight, baseline, partial ? 86 : 72);
     context.textAlign = 'left';
   });
 }

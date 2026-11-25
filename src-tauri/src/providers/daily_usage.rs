@@ -9,9 +9,7 @@ use crate::models::{
     DailyUsage, ModelUsageBreakdown, ModelUsageEntry, ModelUsageVariant, UsageHistory, UsagePeriod,
 };
 
-/// Provider-neutral accumulator for priced local-log usage. Claude and Codex keep their own parsing
-/// and cost rules, then feed only priced events into this type. Unknown models are tracked beside the
-/// priced series and never inflate token or dollar totals.
+/// Aggregates recorded tokens and any available costs into daily and period usage.
 #[derive(Default)]
 pub struct DailyUsageAccumulator {
     days: BTreeMap<NaiveDate, DayAccumulator>,
@@ -21,7 +19,7 @@ pub struct DailyUsageAccumulator {
 #[derive(Default)]
 struct DayAccumulator {
     tokens: u64,
-    cost: f64,
+    cost: Option<f64>,
     cost_estimated: bool,
     models: HashMap<String, ModelAccumulator>,
 }
@@ -29,7 +27,7 @@ struct DayAccumulator {
 #[derive(Default)]
 struct ModelAccumulator {
     tokens: u64,
-    cost: f64,
+    cost: Option<f64>,
     spellings: HashMap<String, u64>,
     variants: HashMap<String, VariantAccumulator>,
 }
@@ -37,31 +35,31 @@ struct ModelAccumulator {
 #[derive(Default)]
 struct VariantAccumulator {
     tokens: u64,
-    cost: f64,
+    cost: Option<f64>,
 }
 
 impl ModelAccumulator {
-    fn add(&mut self, spelling: &str, variant: Option<&str>, tokens: u64, cost: f64) {
+    fn add(&mut self, spelling: &str, variant: Option<&str>, tokens: u64, cost: Option<f64>) {
         self.tokens = self.tokens.saturating_add(tokens);
-        self.cost += cost;
+        add_cost(&mut self.cost, cost);
         *self.spellings.entry(spelling.to_owned()).or_default() += tokens.max(1);
         if let Some(variant) = variant {
             let variant = self.variants.entry(variant.to_owned()).or_default();
             variant.tokens = variant.tokens.saturating_add(tokens);
-            variant.cost += cost;
+            add_cost(&mut variant.cost, cost);
         }
     }
 
     fn merge(&mut self, other: &Self) {
         self.tokens = self.tokens.saturating_add(other.tokens);
-        self.cost += other.cost;
+        add_cost(&mut self.cost, other.cost);
         for (spelling, weight) in &other.spellings {
             *self.spellings.entry(spelling.clone()).or_default() += weight;
         }
         for (name, other_variant) in &other.variants {
             let variant = self.variants.entry(name.clone()).or_default();
             variant.tokens = variant.tokens.saturating_add(other_variant.tokens);
-            variant.cost += other_variant.cost;
+            add_cost(&mut variant.cost, other_variant.cost);
         }
     }
 
@@ -86,13 +84,13 @@ impl ModelAccumulator {
 impl DailyUsageAccumulator {
     /// Adds usage whose dollar cost was derived from a pricing estimate.
     pub fn add(&mut self, date: NaiveDate, tokens: u64, cost: f64, model: &str) {
-        self.add_internal(date, tokens, cost, model, None, true);
+        self.add_internal(date, tokens, Some(cost), model, None, true);
     }
 
     /// Adds usage whose dollar cost was recorded exactly by the source.
     #[allow(dead_code)]
     pub fn add_exact(&mut self, date: NaiveDate, tokens: u64, cost: f64, model: &str) {
-        self.add_internal(date, tokens, cost, model, None, false);
+        self.add_internal(date, tokens, Some(cost), model, None, false);
     }
 
     /// Adds variant usage whose dollar cost was derived from a pricing estimate.
@@ -105,7 +103,7 @@ impl DailyUsageAccumulator {
         variant: &str,
     ) {
         let variant = normalized_model_name(variant);
-        self.add_internal(date, tokens, cost, family, Some(variant), true);
+        self.add_internal(date, tokens, Some(cost), family, Some(variant), true);
     }
 
     /// Adds variant usage whose dollar cost was recorded exactly by the source.
@@ -119,14 +117,14 @@ impl DailyUsageAccumulator {
         variant: &str,
     ) {
         let variant = normalized_model_name(variant);
-        self.add_internal(date, tokens, cost, family, Some(variant), false);
+        self.add_internal(date, tokens, Some(cost), family, Some(variant), false);
     }
 
     fn add_internal(
         &mut self,
         date: NaiveDate,
         tokens: u64,
-        cost: f64,
+        cost: Option<f64>,
         family: &str,
         variant: Option<&str>,
         cost_estimated: bool,
@@ -134,7 +132,7 @@ impl DailyUsageAccumulator {
         let family = normalized_model_name(family);
         let day = self.days.entry(date).or_default();
         day.tokens = day.tokens.saturating_add(tokens);
-        day.cost += cost;
+        add_cost(&mut day.cost, cost);
         day.cost_estimated |= cost_estimated;
         day.models
             .entry(family.to_lowercase())
@@ -142,19 +140,37 @@ impl DailyUsageAccumulator {
             .add(family, variant, tokens, cost);
     }
 
-    pub fn add_unknown_model(&mut self, date: NaiveDate, model: &str) {
-        let model = model.trim();
-        if !model.is_empty() {
-            self.days.entry(date).or_default();
-            self.unknown_models_by_day
-                .entry(date)
-                .or_default()
-                .insert(model.to_owned());
-        }
+    pub fn add_unpriced(&mut self, date: NaiveDate, tokens: u64, model: &str) {
+        self.add_internal(date, tokens, None, model, None, false);
+        self.mark_incomplete(date, model);
     }
 
-    /// Builds the three spend periods. Idle or unknown-only periods stay unbacked (`None`), while
-    /// daily rows retain pricing gaps so they can be attributed to the right period.
+    pub fn add_unpriced_variant(
+        &mut self,
+        date: NaiveDate,
+        tokens: u64,
+        family: &str,
+        variant: &str,
+    ) {
+        self.add_internal(
+            date,
+            tokens,
+            None,
+            family,
+            Some(normalized_model_name(variant)),
+            false,
+        );
+        self.mark_incomplete(date, variant);
+    }
+
+    pub fn mark_incomplete(&mut self, date: NaiveDate, model: &str) {
+        self.unknown_models_by_day
+            .entry(date)
+            .or_default()
+            .insert(normalized_model_name(model).to_owned());
+    }
+
+    /// Builds spend and token usage for the three dashboard periods.
     pub fn build(self, now: DateTime<Utc>, source_note: &str) -> UsageHistory {
         let today = now.with_timezone(&Local).date_naive();
         let yesterday = today.checked_sub_days(Days::new(1));
@@ -169,7 +185,7 @@ impl DailyUsageAccumulator {
             .map(|(date, day)| DailyUsage {
                 date: date.to_string(),
                 tokens: day.tokens,
-                estimated_cost_usd: has_usage(day).then_some(day.cost),
+                estimated_cost_usd: day.cost,
                 estimate_complete: self
                     .unknown_models_by_day
                     .get(date)
@@ -217,7 +233,7 @@ impl DailyUsageAccumulator {
         for date in dates {
             if let Some(day) = self.days.get(date) {
                 total.tokens = total.tokens.saturating_add(day.tokens);
-                total.cost += day.cost;
+                add_cost(&mut total.cost, day.cost);
                 total.cost_estimated |= day.cost_estimated;
                 for (key, model) in &day.models {
                     total.models.entry(key.clone()).or_default().merge(model);
@@ -234,10 +250,10 @@ impl DailyUsageAccumulator {
         unknown_models.sort();
         Some(UsagePeriod {
             tokens: total.tokens,
-            estimated_cost_usd: Some(total.cost),
+            estimated_cost_usd: total.cost,
             cost_estimated: total.cost_estimated,
             estimate_complete: unknown_models.is_empty(),
-            model_breakdown: model_breakdown(&total, source_note),
+            model_breakdown: model_breakdown(&total, source_note, unknown_models.is_empty()),
             unknown_models,
         })
     }
@@ -253,14 +269,24 @@ fn normalized_model_name(model: &str) -> &str {
 }
 
 fn has_usage(day: &DayAccumulator) -> bool {
-    day.tokens > 0 || day.cost > 0.0
+    day.tokens > 0 || day.cost.unwrap_or_default() > 0.0
 }
 
-fn model_breakdown(day: &DayAccumulator, source_note: &str) -> Option<ModelUsageBreakdown> {
+fn add_cost(total: &mut Option<f64>, cost: Option<f64>) {
+    if let Some(cost) = cost {
+        *total = Some(total.unwrap_or_default() + cost);
+    }
+}
+
+fn model_breakdown(
+    day: &DayAccumulator,
+    source_note: &str,
+    estimate_complete: bool,
+) -> Option<ModelUsageBreakdown> {
     let mut entries = day
         .models
         .values()
-        .filter(|model| model.tokens > 0 || model.cost > 0.0)
+        .filter(|model| model.tokens > 0 || model.cost.unwrap_or_default() > 0.0)
         .map(|model| {
             let display_name = model.display_name();
             let mut variants = model
@@ -269,7 +295,7 @@ fn model_breakdown(day: &DayAccumulator, source_note: &str) -> Option<ModelUsage
                 .map(|(name, variant)| ModelUsageVariant {
                     model: name.clone(),
                     total_tokens: variant.tokens,
-                    cost_usd: Some(round_to_cents(variant.cost)),
+                    cost_usd: variant.cost.map(round_to_cents),
                 })
                 .collect::<Vec<_>>();
             variants.sort_by(variant_sort);
@@ -283,7 +309,7 @@ fn model_breakdown(day: &DayAccumulator, source_note: &str) -> Option<ModelUsage
             ModelUsageEntry {
                 model: display_name,
                 total_tokens: model.tokens,
-                cost_usd: Some(round_to_cents(model.cost)),
+                cost_usd: model.cost.map(round_to_cents),
                 variants,
             }
         })
@@ -307,11 +333,11 @@ fn model_breakdown(day: &DayAccumulator, source_note: &str) -> Option<ModelUsage
     let total_tokens = entries.iter().map(|entry| entry.total_tokens).sum::<u64>();
     let mut visible = Vec::new();
     let mut other_tokens = 0_u64;
-    let mut other_cost = 0.0;
+    let mut other_cost = None;
     let mut other_variants = Vec::new();
     let mut named_count = 0;
     for entry in entries {
-        let share = if total_cost > 0.0 {
+        let share = if estimate_complete && total_cost > 0.0 {
             entry.cost_usd.unwrap_or_default() / total_cost
         } else if total_tokens > 0 {
             entry.total_tokens as f64 / total_tokens as f64
@@ -321,7 +347,7 @@ fn model_breakdown(day: &DayAccumulator, source_note: &str) -> Option<ModelUsage
         let unattributed = entry.model.to_lowercase() == "unattributed";
         if unattributed || share < 0.05 || named_count >= 5 {
             other_tokens = other_tokens.saturating_add(entry.total_tokens);
-            other_cost += entry.cost_usd.unwrap_or_default();
+            add_cost(&mut other_cost, entry.cost_usd);
             other_variants.push(ModelUsageVariant {
                 model: entry.model,
                 total_tokens: entry.total_tokens,
@@ -332,12 +358,12 @@ fn model_breakdown(day: &DayAccumulator, source_note: &str) -> Option<ModelUsage
             named_count += 1;
         }
     }
-    if other_tokens > 0 || other_cost > 0.0 {
+    if other_tokens > 0 || other_cost.unwrap_or_default() > 0.0 {
         other_variants.sort_by(variant_sort);
         visible.push(ModelUsageEntry {
             model: "Other".to_owned(),
             total_tokens: other_tokens,
-            cost_usd: Some(round_to_cents(other_cost)),
+            cost_usd: other_cost.map(round_to_cents),
             variants: Some(other_variants),
         });
     }
@@ -431,27 +457,28 @@ mod tests {
     }
 
     #[test]
-    fn idle_and_unknown_only_periods_stay_unbacked() {
+    fn unpriced_tokens_have_no_dollar_amount() {
         let now = Utc.with_ymd_and_hms(2026, 6, 26, 12, 0, 0).unwrap();
         let mut accumulator = DailyUsageAccumulator::default();
-        accumulator.add_unknown_model(day(2026, 6, 26), "mystery");
+        accumulator.add_unpriced(day(2026, 6, 26), 125, "mystery");
         let history = accumulator.build(now, "From test logs");
-        assert!(history.today.is_none());
-        assert!(history.last_30_days.is_none());
+        assert_eq!(history.today.as_ref().unwrap().tokens, 125);
+        assert_eq!(history.today.as_ref().unwrap().estimated_cost_usd, None);
+        assert_eq!(history.last_30_days.unwrap().tokens, 125);
         assert_eq!(history.daily.len(), 1);
-        assert_eq!(history.daily[0].tokens, 0);
+        assert_eq!(history.daily[0].tokens, 125);
         assert_eq!(history.daily[0].estimated_cost_usd, None);
         assert!(!history.daily[0].estimate_complete);
         assert_eq!(history.unknown_models, ["mystery"]);
     }
 
     #[test]
-    fn periods_include_only_priced_usage_and_period_scoped_unknowns() {
+    fn periods_include_all_tokens_and_period_scoped_unknowns() {
         let now = Utc.with_ymd_and_hms(2026, 6, 26, 12, 0, 0).unwrap();
         let mut accumulator = DailyUsageAccumulator::default();
         accumulator.add(day(2026, 6, 26), 300, 3.0, "beta");
         accumulator.add(day(2026, 6, 25), 700, 7.0, "alpha");
-        accumulator.add_unknown_model(day(2026, 6, 25), "mystery");
+        accumulator.add_unpriced(day(2026, 6, 25), 50, "mystery");
         let history = accumulator.build(now, "From test logs");
         assert!(history.today.as_ref().unwrap().estimate_complete);
         assert!(history.today.as_ref().unwrap().cost_estimated);
@@ -460,7 +487,7 @@ mod tests {
             history.yesterday.as_ref().unwrap().unknown_models,
             ["mystery"]
         );
-        assert_eq!(history.last_30_days.as_ref().unwrap().tokens, 1_000);
+        assert_eq!(history.last_30_days.as_ref().unwrap().tokens, 1_050);
         assert_eq!(history.daily.len(), 2);
     }
 
@@ -475,7 +502,7 @@ mod tests {
         accumulator.add(day(2026, 10, 27), 2, 2.0, "first day");
         accumulator.add(day(2026, 11, 25), 3, 3.0, "today");
         accumulator.add(day(2026, 11, 26), 100, 1.0, "future");
-        accumulator.add_unknown_model(day(2026, 10, 26), "unknown outside the window");
+        accumulator.add_unpriced(day(2026, 10, 26), 10, "unknown outside the window");
 
         let history = accumulator.build(now, "From test logs");
 
@@ -518,7 +545,7 @@ mod tests {
         let now = Utc.with_ymd_and_hms(2026, 6, 26, 12, 0, 0).unwrap();
         let mut accumulator = DailyUsageAccumulator::default();
         accumulator.add(day(2026, 6, 26), 300, 3.0, "known");
-        accumulator.add_unknown_model(day(2026, 6, 24), "mystery");
+        accumulator.add_unpriced(day(2026, 6, 24), 50, "mystery");
 
         let history = accumulator.build(now, "From test logs");
         assert!(history.today.as_ref().unwrap().estimate_complete);

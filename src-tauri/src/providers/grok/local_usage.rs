@@ -230,7 +230,7 @@ fn aggregate(events: Vec<TokenEvent>, now: DateTime<Utc>, pricing: &ModelPricing
         if let Some(cost) = pricing.estimated_cost_dollars(model, tokens, true) {
             accumulator.add(date, total, cost, model);
         } else if total > 0 {
-            accumulator.add_unknown_model(date, model);
+            accumulator.add_unpriced(date, total, model);
         }
     }
     accumulator.build(now, SOURCE_NOTE)
@@ -296,7 +296,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_models_warn_without_inflating_totals_and_unattributed_rows_drop() {
+    fn unpriced_models_keep_tokens_and_unattributed_rows_drop() {
         let content = r#"{"ts":"2026-06-18T08:00:00Z","pid":1,"msg":"model changed","ctx":{"model":"grok-unknown-model"}}
 {"ts":"2026-06-18T09:00:00Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
 {"ts":"2026-06-18T10:00:00Z","pid":2,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
@@ -304,7 +304,7 @@ mod tests {
 {"ts":"2026-06-18T12:00:00Z","pid":3,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":500000}}"#;
         let history = aggregate(parse_jsonl(content), now(), &test_bundled_pricing());
 
-        assert_eq!(history.today.as_ref().unwrap().tokens, 500_000);
+        assert_eq!(history.today.as_ref().unwrap().tokens, 1_500_000);
         assert_eq!(history.unknown_models, ["grok-unknown-model"]);
         assert!(!history.today.unwrap().estimate_complete);
     }

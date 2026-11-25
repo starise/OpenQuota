@@ -730,7 +730,9 @@ mod tests {
             stripe: format!("{base}/stripe"),
             csv: format!("{base}/csv"),
         };
-        let pricing = Arc::new(PricingStore::new(directory.path().join("pricing")).unwrap());
+        let pricing = Arc::new(
+            PricingStore::new_without_refresh_for_test(directory.path().join("pricing")).unwrap(),
+        );
         let provider = CursorProvider {
             pricing,
             client: CursorClient::with_endpoints(endpoints).unwrap(),
@@ -784,7 +786,9 @@ mod tests {
             stripe: format!("{base}/stripe"),
             csv: format!("{base}/csv"),
         };
-        let pricing = Arc::new(PricingStore::new(directory.path().join("pricing")).unwrap());
+        let pricing = Arc::new(
+            PricingStore::new_without_refresh_for_test(directory.path().join("pricing")).unwrap(),
+        );
         let provider = CursorProvider {
             pricing,
             client: CursorClient::with_endpoints(endpoints).unwrap(),
@@ -817,7 +821,9 @@ mod tests {
             stripe: format!("{base}/stripe"),
             csv: format!("{base}/csv"),
         };
-        let pricing = Arc::new(PricingStore::new(directory.path().join("pricing")).unwrap());
+        let pricing = Arc::new(
+            PricingStore::new_without_refresh_for_test(directory.path().join("pricing")).unwrap(),
+        );
         let provider = CursorProvider {
             pricing,
             client: CursorClient::with_endpoints(endpoints).unwrap(),

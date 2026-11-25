@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import Icon from './Icon.svelte';
-  import { formatSpendValue, totalSpendRingCenter } from './metricFormat';
+  import { formatSpendValue, formatUsageCost, totalSpendRingCenter } from './metricFormat';
   import SelectMenu from './SelectMenu.svelte';
   import type { ProviderCatalogIndex } from './metrics';
   import { TOTAL_SPEND_GEOMETRY } from './shareCard';
@@ -34,21 +34,30 @@
     if (shareTimer) clearTimeout(shareTimer);
   });
 
-  function display(value: number | null) {
+  function display(value: number | null, estimateComplete: boolean) {
     if (value === null) return '—';
+    if (settings.totalSpendMetric === 'cost') return formatUsageCost(value, estimateComplete);
     return formatSpendValue(value, settings.totalSpendMetric);
   }
   function ringCenter(value: number | null) {
     if (value === null) return { primary: '—', unit: '' };
-    return totalSpendRingCenter(value, settings.totalSpendMetric);
+    const center = totalSpendRingCenter(value, settings.totalSpendMetric);
+    return settings.totalSpendMetric === 'cost' && !projection.estimateComplete
+      ? { ...center, unit: `partial ${center.unit}` }
+      : center;
   }
   function centerTooltip(value: number | null) {
     if (value === null) return undefined;
     const exact = formatSpendValue(value, settings.totalSpendMetric, 'full');
-    if (projection.costEstimated && settings.totalSpendMetric !== 'tokens') {
-      return `${exact} · Estimated locally, so it may be off`;
-    }
-    return exact;
+    return [
+      exact,
+      ...(settings.totalSpendMetric === 'cost' && !projection.estimateComplete
+        ? ['Partial USD: some usage has no known price']
+        : []),
+      ...(projection.costEstimated && settings.totalSpendMetric !== 'tokens'
+        ? ['Estimated locally, so it may be off']
+        : []),
+    ].join(' · ');
   }
   function metricTitle() {
     if (settings.totalSpendMetric === 'tokens') return 'Tokens';
@@ -119,7 +128,7 @@
     </div>
     {#if projection.centerValue === null}
       <div class="total-card__empty">
-        <span>{emptySpendMessage(settings.totalSpendMetric)}</span>
+        <span>{emptySpendMessage(settings.totalSpendMetric, projection.estimateComplete)}</span>
       </div>
     {:else}
       <div class="total-card__body">
@@ -149,13 +158,15 @@
               ><i
                 style={`background: var(--provider-${providerFamily(provider.id)}, var(--provider))`}
               ></i>{providerDisplayName(provider.id)}</span
-            ><strong>{display(provider.value)}</strong>
+            ><strong>{display(provider.value, provider.period.estimateComplete)}</strong>
           {/each}
         </div>
       </div>
     {/if}
     {#if settings.totalSpendMetric === 'tokens' && !projection.estimateComplete}
-      <p class="total-card__coverage">Token total excludes usage without pricing.</p>
+      <p class="total-card__coverage">
+        Older saved token totals may be incomplete until refreshed.
+      </p>
     {/if}
   </div>
 </section>

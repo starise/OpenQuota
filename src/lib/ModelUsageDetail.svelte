@@ -5,12 +5,15 @@
   interface Props {
     title: string;
     breakdown: ModelUsageBreakdown;
+    estimatedCostUsd: number | null;
+    estimateComplete: boolean;
     top: number;
     onEnter: () => void;
     onLeave: () => void;
   }
 
-  let { title, breakdown, top, onEnter, onLeave }: Props = $props();
+  let { title, breakdown, estimatedCostUsd, estimateComplete, top, onEnter, onLeave }: Props =
+    $props();
 
   const shares = $derived.by(() => {
     const allPriced = breakdown.models.every((model) => model.costUsd !== null);
@@ -72,6 +75,13 @@
       </div>
     {/each}
   </div>
+  {#if !estimateComplete}
+    <p>
+      {estimatedCostUsd === null
+        ? 'Cost unavailable: some usage has no known price.'
+        : 'Partial USD: some usage has no known price.'}
+    </p>
+  {/if}
   <p>{breakdown.sourceNote}</p>
 </div>
 

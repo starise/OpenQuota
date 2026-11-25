@@ -97,7 +97,7 @@ describe('share card layout', () => {
     ]);
   });
 
-  it('does not encode unknown pricing as an approximation prefix', () => {
+  it('marks partial USD in provider usage rows without changing token totals', () => {
     const snapshot = structuredClone(codexState.snapshot!);
     snapshot.usage.today = {
       tokens: 500,
@@ -115,7 +115,19 @@ describe('share card layout', () => {
     );
 
     expect(rows.find((row) => row.kind === 'text' && row.label === 'Today')).toMatchObject({
-      value: '$0.03 · 500 tokens',
+      value: '$0.03 partial · 500 tokens',
+    });
+
+    snapshot.usage.today.estimatedCostUsd = null;
+    const noCostRows = buildProviderShareRows(
+      'codex',
+      snapshot,
+      { ...settingsState.settings.providers[0], expanded: true },
+      settingsState.settings,
+      Date.now(),
+    );
+    expect(noCostRows.find((row) => row.kind === 'text' && row.label === 'Today')).toMatchObject({
+      value: '500 tokens · cost unavailable',
     });
   });
 
@@ -374,5 +386,42 @@ describe('share card layout', () => {
         'Monitor Your AI Subscriptions with OpenQuota',
       ]),
     );
+
+    drawn.length = 0;
+    renderTotalSpendShareCard({
+      projection: {
+        slices: [
+          {
+            id: 'codex',
+            value: 0.03,
+            period: {
+              tokens: 500,
+              estimatedCostUsd: 0.03,
+              costEstimated: true,
+              estimateComplete: false,
+            },
+          },
+        ],
+        centerValue: 0.03,
+        costEstimated: true,
+        estimateComplete: false,
+      },
+      metric: 'cost',
+      period: 'today',
+    });
+    expect(drawn).toEqual(expect.arrayContaining(['partial dollars', '$0.03 partial']));
+
+    drawn.length = 0;
+    renderTotalSpendShareCard({
+      projection: {
+        slices: [],
+        centerValue: null,
+        costEstimated: false,
+        estimateComplete: false,
+      },
+      metric: 'costPerMillion',
+      period: 'today',
+    });
+    expect(drawn).toContain('Cost/MTok unavailable: some usage is unpriced');
   });
 });

@@ -60,7 +60,49 @@ describe('Total Spend projection', () => {
 
     expect(projectSpend(providers, 'today', 'cost')).toMatchObject({
       centerValue: 4,
+      estimateComplete: false,
       slices: [{ id: 'claude', value: 4 }],
+    });
+    expect(projectSpend(providers, 'today', 'costPerMillion')).toMatchObject({
+      centerValue: null,
+      estimateComplete: false,
+      slices: [],
+    });
+  });
+
+  it('shows known partial dollars while suppressing cost per million', () => {
+    const providers = [
+      {
+        id: 'claude',
+        usage: usage({
+          tokens: 1_000_000,
+          estimatedCostUsd: 4,
+          costEstimated: true,
+          estimateComplete: true,
+        }),
+      },
+      {
+        id: 'codex',
+        usage: usage({
+          tokens: 9_000_000,
+          estimatedCostUsd: 0.03,
+          costEstimated: true,
+          estimateComplete: false,
+        }),
+      },
+    ];
+
+    expect(projectSpend(providers, 'today', 'cost')).toMatchObject({
+      centerValue: 4.03,
+      estimateComplete: false,
+      slices: [
+        { id: 'claude', value: 4 },
+        { id: 'codex', value: 0.03 },
+      ],
+    });
+    expect(projectSpend(providers, 'today', 'tokens')).toMatchObject({
+      centerValue: 10_000_000,
+      estimateComplete: false,
     });
   });
 
@@ -127,6 +169,7 @@ describe('Total Spend projection', () => {
     ];
 
     expect(projectSpend(providers, 'today', 'cost')).toMatchObject({
+      centerValue: 2,
       costEstimated: true,
       estimateComplete: false,
     });

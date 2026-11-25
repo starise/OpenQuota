@@ -55,6 +55,15 @@ export function formatMetricValue(
   return label ? `${formatted} ${label}` : formatted;
 }
 
+export function formatUsageCost(
+  value: number,
+  estimateComplete: boolean,
+  style: MetricNumberStyle = 'row',
+) {
+  const cost = formatMetricNumber(value, 'dollars', style);
+  return estimateComplete ? cost : `${cost} partial`;
+}
+
 export function formatSpendValue(
   value: number,
   metric: AppSettings['totalSpendMetric'],

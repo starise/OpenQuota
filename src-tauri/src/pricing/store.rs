@@ -30,7 +30,8 @@ const FAILURE_RETRY_INTERVAL: TimeDelta = TimeDelta::minutes(30);
 const LITELLM_URL: &str =
     "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
 const MODELS_DEV_URL: &str = "https://models.dev/api.json";
-const SUPPLEMENT_URL: &str = "https://raw.githubusercontent.com/deviffyy/OpenQuota/main/src-tauri/resources/pricing_supplement.json";
+const SUPPLEMENT_URL: &str = "https://raw.githubusercontent.com/starise/OpenQuota/main/src-tauri/resources/pricing_supplement.json";
+const LAST_KNOWN_FILE: &str = "last_known.json";
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -61,17 +62,17 @@ impl SourceId {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
 struct SourceState {
     etag: Option<String>,
     fetched_at: Option<DateTime<Utc>>,
     failed_at: Option<DateTime<Utc>>,
+    url: Option<String>,
 }
 
 #[derive(Clone)]
 struct BundledSources {
     supplement: Arc<[u8]>,
-    litellm: Arc<[u8]>,
-    models_dev: Arc<[u8]>,
 }
 
 impl Default for BundledSources {
@@ -79,12 +80,6 @@ impl Default for BundledSources {
         Self {
             supplement: Arc::from(
                 include_bytes!("../../resources/pricing_supplement.json").as_slice(),
-            ),
-            litellm: Arc::from(
-                include_bytes!("../../resources/pricing_litellm_snapshot.json").as_slice(),
-            ),
-            models_dev: Arc::from(
-                include_bytes!("../../resources/pricing_models_dev_snapshot.json").as_slice(),
             ),
         }
     }
@@ -172,15 +167,21 @@ impl PricingStore {
     pub(crate) fn new_without_refresh_for_test(
         cache_directory: PathBuf,
     ) -> Result<Self, PricingStoreError> {
-        // Provider unit tests use bundled prices and must not start background network refreshes.
         let store = Self::new(cache_directory)?;
+        *store
+            .pricing
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Arc::new(super::test_bundled_pricing());
         let now = (store.now)();
         let mut states = store
             .source_states
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         for source in SourceId::ALL {
-            states.entry(source).or_default().fetched_at = Some(now);
+            let state = states.entry(source).or_default();
+            state.fetched_at = Some(now);
+            state.url = Some(source.url().to_owned());
         }
         drop(states);
         Ok(store)
@@ -238,9 +239,11 @@ impl PricingStore {
             .source_states
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        SourceId::ALL
-            .iter()
-            .any(|source| states.get(source).is_none_or(|state| is_due(state, now)))
+        SourceId::ALL.iter().any(|source| {
+            states
+                .get(source)
+                .is_none_or(|state| is_due(*source, state, now))
+        })
     }
 
     fn refresh_due(&self) {
@@ -254,12 +257,13 @@ impl PricingStore {
             .clone();
         let now = (self.now)();
         let mut changed = false;
+        let previous = self.snapshot();
         for source in SourceId::ALL {
             let state = states.entry(source).or_default();
-            if !is_due(state, now) {
+            if !is_due(source, state, now) {
                 continue;
             }
-            match self.fetch_source(source, state, now) {
+            match self.fetch_source(source, state, now, &previous.primary) {
                 Ok(source_changed) => changed |= source_changed,
                 Err(error) => {
                     state.failed_at = Some(now);
@@ -306,7 +310,12 @@ impl PricingStore {
         source: SourceId,
         state: &mut SourceState,
         now: DateTime<Utc>,
+        previous_primary: &PricingCatalog,
     ) -> Result<bool, PricingStoreError> {
+        if source_changed(source, state) {
+            *state = SourceState::default();
+        }
+        state.url.get_or_insert_with(|| source.url().to_owned());
         let response = self.http.fetch(source.url(), state.etag.as_deref())?;
         crate::app_debug!(
             "http",
@@ -317,6 +326,15 @@ impl PricingStore {
         match response.status {
             StatusCode::OK => {
                 let cache_data = validated_cache_data(source, &response.body)?;
+                if source != SourceId::Supplement {
+                    let retained = retained_cache_data(
+                        &self.cache_directory,
+                        source,
+                        &cache_data,
+                        previous_primary,
+                    )?;
+                    write_bytes_atomic(&self.cache_directory.join(LAST_KNOWN_FILE), &retained)?;
+                }
                 write_bytes_atomic(&self.cache_file(source), &cache_data)?;
                 state.etag = response.etag;
                 state.fetched_at = Some(now);
@@ -324,6 +342,9 @@ impl PricingStore {
                 Ok(true)
             }
             StatusCode::NOT_MODIFIED => {
+                if response.etag.is_some() {
+                    state.etag = response.etag;
+                }
                 state.fetched_at = Some(now);
                 state.failed_at = None;
                 Ok(false)
@@ -337,7 +358,17 @@ impl PricingStore {
     }
 }
 
-fn is_due(state: &SourceState, now: DateTime<Utc>) -> bool {
+fn source_changed(source: SourceId, state: &SourceState) -> bool {
+    match state.url.as_deref() {
+        Some(url) => url != source.url(),
+        None => source == SourceId::Supplement,
+    }
+}
+
+fn is_due(source: SourceId, state: &SourceState, now: DateTime<Utc>) -> bool {
+    if source_changed(source, state) {
+        return true;
+    }
     if state
         .failed_at
         .is_some_and(|failed| now - failed < FAILURE_RETRY_INTERVAL)
@@ -375,9 +406,12 @@ fn load_pricing(
         },
         Err(_) => bundled_supplement,
     };
-    let primary = load_catalog(cache_directory, SourceId::Litellm, &bundled.litellm)?;
-    let secondary = load_catalog(cache_directory, SourceId::ModelsDev, &bundled.models_dev)?;
-    Ok(ModelPricing::new(supplement, primary, secondary))
+    let primary = load_catalog(cache_directory, SourceId::Litellm);
+    let secondary = load_catalog(cache_directory, SourceId::ModelsDev);
+    let retained = load_retained_catalog(cache_directory);
+    Ok(ModelPricing::with_retained(
+        supplement, primary, secondary, retained,
+    ))
 }
 
 fn supplement_is_newer(candidate: Option<&str>, current: Option<&str>) -> bool {
@@ -400,23 +434,60 @@ fn supplement_is_newer(candidate: Option<&str>, current: Option<&str>) -> bool {
     }
 }
 
-fn load_catalog(
-    cache_directory: &Path,
-    source: SourceId,
-    bundled: &[u8],
-) -> Result<PricingCatalog, PricingStoreError> {
-    let mut catalog = catalog_from_compact(bundled)?;
+fn load_catalog(cache_directory: &Path, source: SourceId) -> PricingCatalog {
     if let Ok(cached) = fs::read(cache_directory.join(source.file_name())) {
         match catalog_from_compact(&cached) {
-            Ok(cache) => catalog = catalog.merging(cache),
+            Ok(catalog) => return catalog,
             Err(error) => crate::app_warn!(
                 "pricing",
-                "cached {} catalog unreadable, using bundled: {error}",
+                "cached {} catalog unreadable, using empty catalog: {error}",
                 source.file_name()
             ),
         }
     }
-    Ok(catalog)
+    PricingCatalog::default()
+}
+
+fn load_retained_catalog(cache_directory: &Path) -> PricingCatalog {
+    match fs::read(cache_directory.join(LAST_KNOWN_FILE)) {
+        Ok(cached) => match catalog_from_compact(&cached) {
+            Ok(catalog) => catalog,
+            Err(error) => {
+                crate::app_warn!(
+                    "pricing",
+                    "cached last-known pricing unreadable, using empty catalog: {error}"
+                );
+                PricingCatalog::default()
+            }
+        },
+        Err(_) => PricingCatalog::default(),
+    }
+}
+
+fn retained_cache_data(
+    cache_directory: &Path,
+    replaced_source: SourceId,
+    replacement: &[u8],
+    previous_primary: &PricingCatalog,
+) -> Result<Vec<u8>, PricingStoreError> {
+    let replacement = catalog_from_compact(replacement)?;
+    let mut retained = load_retained_catalog(cache_directory);
+    let other_source = match replaced_source {
+        SourceId::Litellm => SourceId::ModelsDev,
+        SourceId::ModelsDev => SourceId::Litellm,
+        SourceId::Supplement => return Ok(compact_data(&retained)?),
+    };
+    let other = load_catalog(cache_directory, other_source);
+    for (model, rates) in load_catalog(cache_directory, replaced_source).entries {
+        if !replacement.entries.contains_key(&model) && !other.entries.contains_key(&model) {
+            // A batch publishes one snapshot, including when both sources retire the same ID.
+            let last_rate = previous_primary
+                .find_exact(&model)
+                .map_or(rates, |(_, rate)| rate);
+            retained.entries.insert(model, last_rate);
+        }
+    }
+    Ok(compact_data(&retained)?)
 }
 
 fn validated_cache_data(source: SourceId, body: &[u8]) -> Result<Vec<u8>, PricingStoreError> {
@@ -522,14 +593,6 @@ mod tests {
                 br#"{"pricing":{"auto":{"input_per_million":1.25,"output_per_million":6}},"fast_multipliers":{},"alias_rules":[]}"#
                     .as_slice(),
             ),
-            litellm: Arc::from(
-                br#"{"models":{"bundled-model":{"i":1,"o":2,"cw":1,"cr":0.1},"snapshot-only":{"i":2,"o":3,"cw":2,"cr":0.2}}}"#
-                    .as_slice(),
-            ),
-            models_dev: Arc::from(
-                br#"{"models":{"bundled-dev-model":{"i":3,"o":4,"cw":3,"cr":0.3}}}"#
-                    .as_slice(),
-            ),
         }
     }
 
@@ -565,19 +628,65 @@ mod tests {
     }
 
     #[test]
-    fn serves_bundled_data_before_fetch() {
+    fn starts_with_empty_catalogs_and_bundled_supplement() {
         let directory = tempdir().unwrap();
         let store = PricingStore::with_dependencies(
             directory.path().to_path_buf(),
-            bundled(),
+            BundledSources::default(),
             Arc::new(StubHttp::default()),
             Arc::new(Utc::now),
         )
         .unwrap();
+        assert!(store.snapshot().primary.entries.is_empty());
+        assert!(store.snapshot().secondary.entries.is_empty());
+        assert_eq!(
+            store.snapshot().resolve("auto").unwrap().input_per_million,
+            1.25
+        );
+    }
+
+    #[test]
+    fn removed_exact_rates_survive_restart_and_returning_current_rates_win() {
+        let directory = tempdir().unwrap();
+        fs::write(
+            directory.path().join(SourceId::Litellm.file_name()),
+            br#"{"models":{"removed-model":{"i":1,"o":2,"cw":1,"cr":0.1},"returning-model":{"i":1,"o":2,"cw":1,"cr":0.1}}}"#,
+        )
+        .unwrap();
+        fs::write(
+            directory.path().join(SourceId::ModelsDev.file_name()),
+            br#"{"models":{"removed-model":{"i":9,"o":18,"cw":9,"cr":0.9},"secondary-model":{"i":2,"o":4,"cw":2,"cr":0.2}}}"#,
+        )
+        .unwrap();
+        fs::write(
+            directory.path().join(LAST_KNOWN_FILE),
+            br#"{"models":{"returning-model":{"i":1,"o":2,"cw":1,"cr":0.1},"secondary-model":{"i":1,"o":2,"cw":1,"cr":0.1}}}"#,
+        )
+        .unwrap();
+
+        let http = Arc::new(StubHttp::default());
+        http.push(response(
+            br#"{"returning-model":{"input_cost_per_token":0.000004,"output_cost_per_token":0.000008},"other-primary":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002}}"#,
+        ));
+        http.push(response(
+            br#"{"x":{"models":{"secondary-model":{"cost":{"input":5,"output":10}},"other-secondary":{"cost":{"input":1,"output":2}}}}}"#,
+        ));
+        http.push(response(
+            br#"{"pricing":{"auto":{"input_per_million":9,"output_per_million":9}},"fast_multipliers":{},"alias_rules":[]}"#,
+        ));
+        let now = Utc.with_ymd_and_hms(2026, 7, 15, 10, 0, 0).unwrap();
+        let store = PricingStore::with_dependencies(
+            directory.path().to_path_buf(),
+            bundled(),
+            http,
+            Arc::new(move || now),
+        )
+        .unwrap();
+        store.refresh_due();
         assert_eq!(
             store
                 .snapshot()
-                .resolve("bundled-model")
+                .resolve("removed-model")
                 .unwrap()
                 .input_per_million,
             1.0
@@ -585,15 +694,187 @@ mod tests {
         assert_eq!(
             store
                 .snapshot()
-                .resolve("bundled-dev-model")
+                .resolve("returning-model")
                 .unwrap()
                 .input_per_million,
-            3.0
+            4.0
+        );
+        assert_eq!(
+            store
+                .snapshot()
+                .resolve("secondary-model")
+                .unwrap()
+                .input_per_million,
+            5.0
+        );
+
+        let later = now + TimeDelta::hours(25);
+        let next_http = Arc::new(StubHttp::default());
+        next_http.push(response(
+            br#"{"other-primary":{"input_cost_per_token":0.000008,"output_cost_per_token":0.000016}}"#,
+        ));
+        next_http.push(response(
+            br#"{"x":{"models":{"other-secondary":{"cost":{"input":9,"output":18}}}}}"#,
+        ));
+        next_http.push(response(
+            br#"{"pricing":{"auto":{"input_per_million":9,"output_per_million":9}},"fast_multipliers":{},"alias_rules":[]}"#,
+        ));
+        let second = PricingStore::with_dependencies(
+            directory.path().to_path_buf(),
+            bundled(),
+            next_http,
+            Arc::new(move || later),
+        )
+        .unwrap();
+        second.refresh_due();
+
+        let after_restart = PricingStore::with_dependencies(
+            directory.path().to_path_buf(),
+            bundled(),
+            Arc::new(StubHttp::default()),
+            Arc::new(move || now),
+        )
+        .unwrap();
+        assert_eq!(
+            after_restart
+                .snapshot()
+                .resolve("removed-model")
+                .unwrap()
+                .input_per_million,
+            1.0
+        );
+        assert_eq!(
+            after_restart
+                .snapshot()
+                .resolve("returning-model")
+                .unwrap()
+                .input_per_million,
+            4.0
+        );
+        assert_eq!(
+            after_restart
+                .snapshot()
+                .resolve("secondary-model")
+                .unwrap()
+                .input_per_million,
+            5.0
+        );
+
+        fs::write(
+            directory.path().join(SourceId::Litellm.file_name()),
+            br#"{"models":{"removed-model":{"i":7,"o":14,"cw":7,"cr":0.7}}}"#,
+        )
+        .unwrap();
+        let returned = PricingStore::with_dependencies(
+            directory.path().to_path_buf(),
+            bundled(),
+            Arc::new(StubHttp::default()),
+            Arc::new(move || now),
+        )
+        .unwrap();
+        assert_eq!(
+            returned
+                .snapshot()
+                .resolve("removed-model")
+                .unwrap()
+                .input_per_million,
+            7.0
+        );
+    }
+
+    #[test]
+    fn retained_exact_rates_beat_fuzzy_matches_and_can_price_fast_variants() {
+        let directory = tempdir().unwrap();
+        fs::write(
+            directory.path().join(SourceId::Litellm.file_name()),
+            br#"{"models":{"gpt-5.4":{"i":2.5,"o":15,"cw":2.5,"cr":0.25}}}"#,
+        )
+        .unwrap();
+        fs::write(
+            directory.path().join("last_known.json"),
+            br#"{"models":{"gpt-5.4-v2":{"i":7,"o":35,"cw":7,"cr":0.7},"base-model":{"i":1,"o":2,"cw":1,"cr":0.1}}}"#,
+        )
+        .unwrap();
+        let bundled = bundled_with_supplement(None, 1.25);
+        let mut bundled = bundled;
+        bundled.supplement = Arc::from(
+            br#"{"pricing":{"auto":{"input_per_million":1.25,"output_per_million":6}},"fast_multipliers":{"base-model":2},"alias_rules":[]}"#
+                .as_slice(),
+        );
+        let store = PricingStore::with_dependencies(
+            directory.path().to_path_buf(),
+            bundled,
+            Arc::new(StubHttp::default()),
+            Arc::new(Utc::now),
+        )
+        .unwrap();
+
+        assert_eq!(
+            store
+                .snapshot()
+                .resolve("gpt-5.4-v2")
+                .unwrap()
+                .input_per_million,
+            7.0
+        );
+        assert_eq!(
+            store
+                .snapshot()
+                .resolve("base-model-fast")
+                .unwrap()
+                .input_per_million,
+            2.0
+        );
+    }
+
+    #[test]
+    fn supplement_source_change_fetches_without_the_old_etag_and_304_keeps_cache() {
+        let directory = tempdir().unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 7, 15, 10, 0, 0).unwrap();
+        let fetched_at = now.to_rfc3339();
+        let states = serde_json::json!({
+            "litellm": { "etag": "\"lite-v1\"", "fetched_at": fetched_at, "url": LITELLM_URL },
+            "models_dev": { "etag": "\"models-v1\"", "fetched_at": fetched_at, "url": MODELS_DEV_URL },
+            "supplement": { "etag": "\"old-v1\"", "fetched_at": fetched_at, "failed_at": fetched_at, "url": "https://raw.githubusercontent.com/deviffyy/OpenQuota/main/src-tauri/resources/pricing_supplement.json" }
+        });
+        fs::write(
+            state_file(directory.path()),
+            serde_json::to_vec(&states).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            directory.path().join(SourceId::Supplement.file_name()),
+            supplement(Some("2026-07-14"), 9.0),
+        )
+        .unwrap();
+
+        let http = Arc::new(StubHttp::default());
+        http.push(FetchResponse {
+            status: StatusCode::NOT_MODIFIED,
+            etag: None,
+            body: Vec::new(),
+        });
+        let store = PricingStore::with_dependencies(
+            directory.path().to_path_buf(),
+            bundled(),
+            http.clone(),
+            Arc::new(move || now),
+        )
+        .unwrap();
+        store.refresh_due();
+
+        assert_eq!(
+            http.requests.lock().unwrap().as_slice(),
+            &[(SUPPLEMENT_URL.to_owned(), None)]
         );
         assert_eq!(
             store.snapshot().resolve("auto").unwrap().input_per_million,
-            1.25
+            9.0
         );
+        let saved_states: serde_json::Value =
+            serde_json::from_slice(&fs::read(state_file(directory.path())).unwrap()).unwrap();
+        assert_eq!(saved_states["supplement"]["url"], SUPPLEMENT_URL);
+        assert!(saved_states["supplement"]["etag"].is_null());
     }
 
     #[test]
@@ -724,6 +1005,11 @@ mod tests {
     #[test]
     fn refreshes_all_sources_and_persists_cache() {
         let directory = tempdir().unwrap();
+        fs::write(
+            directory.path().join(SourceId::Litellm.file_name()),
+            br#"{"models":{"snapshot-only":{"i":2,"o":3,"cw":2,"cr":0.2}}}"#,
+        )
+        .unwrap();
         let http = Arc::new(StubHttp::default());
         http.push(response(br#"{"fetched-model":{"input_cost_per_token":0.000005,"output_cost_per_token":0.00001},"bundled-model":{"input_cost_per_token":0.000007,"output_cost_per_token":0.00001}}"#));
         http.push(response(

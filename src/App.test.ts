@@ -537,7 +537,9 @@ describe('OpenQuota dashboard', () => {
     });
     render(App);
     const totalSpend = await screen.findByRole('region', { name: 'Total Spend' });
-    expect(within(totalSpend).getByText('No cost data for this period')).toBeInTheDocument();
+    expect(
+      within(totalSpend).getByText('Cost unavailable: some usage is unpriced'),
+    ).toBeInTheDocument();
     await fireEvent.click(within(totalSpend).getByRole('combobox', { name: 'Total Spend Metric' }));
     await fireEvent.click(screen.getByRole('option', { name: 'Tokens' }));
     expect(within(totalSpend).getByText('Codex')).toBeInTheDocument();
@@ -545,7 +547,7 @@ describe('OpenQuota dashboard', () => {
     expect(within(totalSpend).getByText('million')).toBeInTheDocument();
     expect(within(totalSpend).getByText('2.1M')).toBeInTheDocument();
     expect(
-      within(totalSpend).getByText('Token total excludes usage without pricing.'),
+      within(totalSpend).getByText('Older saved token totals may be incomplete until refreshed.'),
     ).toBeVisible();
     expect(within(totalSpend).queryByText('No data')).not.toBeInTheDocument();
   });
