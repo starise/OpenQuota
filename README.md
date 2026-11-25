@@ -124,6 +124,18 @@ pnpm install --frozen-lockfile
 pnpm tauri dev
 ```
 
+The Rust development profile keeps source locations in backtraces. For full debugger
+information, set `CARGO_PROFILE_DEV_DEBUG=full`.
+
+On Windows x64 with the MSVC toolchain, you can use the linker bundled with Rust.
+Use a dedicated PowerShell terminal so LLD gets its own Cargo cache.
+
+```powershell
+$env:CARGO_TARGET_DIR = Join-Path $PWD 'src-tauri\target\lld-dev'
+$env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER = Join-Path (rustc --print sysroot) 'lib\rustlib\x86_64-pc-windows-msvc\bin\rust-lld.exe'
+pnpm tauri dev
+```
+
 ### Quality checks
 
 Run the complete verification suite:
