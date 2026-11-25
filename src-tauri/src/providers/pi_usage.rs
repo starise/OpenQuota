@@ -85,8 +85,14 @@ fn scan_directory_into(
     let mut events = Vec::new();
     for path in paths {
         seen_paths.insert(path.clone());
-        let Some(parsed) =
-            load_or_parse_log(storage, "pi", &path, LOG_CACHE_SCHEMA_VERSION, parse_jsonl)?
+        let Some(parsed) = load_or_parse_log(
+            storage,
+            "pi",
+            &path,
+            LOG_CACHE_SCHEMA_VERSION,
+            None,
+            parse_jsonl,
+        )?
         else {
             continue;
         };

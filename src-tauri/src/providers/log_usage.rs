@@ -4,7 +4,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local, NaiveDate, TimeZone, Utc};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::{
@@ -49,6 +49,11 @@ struct CachedLogEventsRef<'a, T> {
     events: &'a [T],
 }
 
+pub struct LogWindow<T> {
+    pub since: NaiveDate,
+    pub timestamp: fn(&T) -> DateTime<Utc>,
+}
+
 /// Loads one parsed log file from the persistent cache or refreshes it from disk. An unreadable file
 /// is deliberately not an error for the whole provider and never becomes a cached empty result; its
 /// stale cache row is removed so a later refresh retries the source file.
@@ -57,6 +62,7 @@ pub fn load_or_parse_log<T>(
     provider_id: &str,
     path: &Path,
     schema_version: u8,
+    window: Option<LogWindow<T>>,
     parse: impl FnOnce(&str) -> Vec<T>,
 ) -> Result<Option<Vec<T>>, LogCacheError>
 where
@@ -79,21 +85,49 @@ where
         storage.remove_log_events(provider_id, path)?;
         return Ok(None);
     };
-    if let Some(events) = storage
-        .load_log_events(
+    let cutoff = window.as_ref().and_then(|window| {
+        let midnight = window.since.and_hms_opt(0, 0, 0)?;
+        let since = Local.from_local_datetime(&midnight).earliest()?;
+        Some((schema_version, since.timestamp()))
+    });
+    let save_events = |events: &[T], json: &str| {
+        let event_index = window.as_ref().map(|window| {
+            let latest = events
+                .iter()
+                .map(|event| (window.timestamp)(event).timestamp())
+                .max();
+            (schema_version, latest)
+        });
+        storage.save_log_events(
             provider_id,
             path,
             fingerprint.size,
             fingerprint.modified_nanos,
-        )?
-        .as_deref()
-        .and_then(|json| serde_json::from_str::<CachedLogEvents<T>>(json).ok())
-        .filter(|cached| cached.schema_version == schema_version)
-        .map(|cached| cached.events)
-    {
-        crate::logging::local_usage_file_recovered(provider_id, path);
-        crate::app_debug!("cache", "local usage cache hit for {provider_id}");
-        return Ok(Some(events));
+            json,
+            event_index,
+        )
+    };
+    if let Some(entry) = storage.load_log_events(
+        provider_id,
+        path,
+        fingerprint.size,
+        fingerprint.modified_nanos,
+        cutoff,
+    )? {
+        let Some(json) = entry.events_json else {
+            crate::logging::local_usage_file_recovered(provider_id, path);
+            return Ok(Some(Vec::new()));
+        };
+        if let Ok(cached) = serde_json::from_str::<CachedLogEvents<T>>(&json) {
+            if cached.schema_version == schema_version {
+                if window.is_some() && entry.indexed_version != Some(schema_version) {
+                    save_events(&cached.events, &json)?;
+                }
+                crate::logging::local_usage_file_recovered(provider_id, path);
+                crate::app_debug!("cache", "local usage cache hit for {provider_id}");
+                return Ok(Some(cached.events));
+            }
+        }
     }
 
     let content = match fs::read_to_string(path) {
@@ -111,13 +145,7 @@ where
         schema_version,
         events: &events,
     })?;
-    storage.save_log_events(
-        provider_id,
-        path,
-        fingerprint.size,
-        fingerprint.modified_nanos,
-        &json,
-    )?;
+    save_events(&events, &json)?;
     Ok(Some(events))
 }
 
@@ -226,7 +254,9 @@ mod tests {
     use chrono::{TimeZone, Utc};
     use tempfile::tempdir;
 
-    use super::{load_or_parse_log, parse_log_timestamp, scan_or_cached_usage, LogFileFingerprint};
+    use super::{
+        load_or_parse_log, parse_log_timestamp, scan_or_cached_usage, LogFileFingerprint, LogWindow,
+    };
     use crate::{
         models::{DailyUsage, ProviderSnapshot, UsageHistory},
         storage::Storage,
@@ -292,16 +322,42 @@ mod tests {
         };
 
         assert_eq!(
-            load_or_parse_log(&storage, "test", &path, 1, parse).unwrap(),
+            load_or_parse_log(&storage, "test", &path, 1, None, parse).unwrap(),
             Some(vec!["first".to_owned()])
         );
         assert_eq!(
-            load_or_parse_log(&storage, "test", &path, 1, parse).unwrap(),
+            load_or_parse_log(&storage, "test", &path, 1, None, parse).unwrap(),
             Some(vec!["first".to_owned()])
         );
         assert_eq!(parses.get(), 1);
-        load_or_parse_log(&storage, "test", &path, 2, parse).unwrap();
+        load_or_parse_log(&storage, "test", &path, 2, None, parse).unwrap();
         assert_eq!(parses.get(), 2);
+    }
+
+    #[test]
+    fn skips_old_cached_events_only_for_the_matching_parser_version() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::open(&directory.path().join("openquota.db")).unwrap();
+        let path = directory.path().join("session.jsonl");
+        fs::write(&path, "2026-10-01T12:00:00Z").unwrap();
+        let window = |date| LogWindow {
+            since: chrono::NaiveDate::from_ymd_opt(2026, 10, date).unwrap(),
+            timestamp: |event: &chrono::DateTime<Utc>| *event,
+        };
+        let parse = |content: &str| vec![parse_log_timestamp(content).unwrap()];
+        // An existing cache entry without an index is indexed on its first dated lookup.
+        load_or_parse_log(&storage, "test", &path, 1, None, parse).unwrap();
+        load_or_parse_log(&storage, "test", &path, 1, Some(window(5)), parse).unwrap();
+
+        let aged = load_or_parse_log(&storage, "test", &path, 1, Some(window(5)), |_| {
+            panic!("an unchanged file must not be reparsed")
+        })
+        .unwrap();
+        assert_eq!(aged, Some(Vec::new()));
+        let changed_parser = load_or_parse_log(&storage, "test", &path, 2, Some(window(5)), parse)
+            .unwrap()
+            .unwrap();
+        assert_eq!(changed_parser, parse("2026-10-01T12:00:00Z"));
     }
 
     #[test]
@@ -319,11 +375,12 @@ mod tests {
                 fingerprint.size,
                 fingerprint.modified_nanos.saturating_sub(1),
                 r#"{"schema_version":1,"events":["stale"]}"#,
+                None,
             )
             .unwrap();
 
         assert_eq!(
-            load_or_parse_log::<String>(&storage, "test", &path, 1, |_| Vec::new()).unwrap(),
+            load_or_parse_log::<String>(&storage, "test", &path, 1, None, |_| Vec::new()).unwrap(),
             None
         );
         assert_eq!(
@@ -333,6 +390,7 @@ mod tests {
                     &path,
                     fingerprint.size,
                     fingerprint.modified_nanos.saturating_sub(1),
+                    None,
                 )
                 .unwrap(),
             None
@@ -340,7 +398,7 @@ mod tests {
 
         fs::write(&path, "recovered").unwrap();
         assert_eq!(
-            load_or_parse_log(&storage, "test", &path, 1, |content| {
+            load_or_parse_log(&storage, "test", &path, 1, None, |content| {
                 vec![content.to_owned()]
             })
             .unwrap(),

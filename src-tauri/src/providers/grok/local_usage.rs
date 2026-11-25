@@ -89,12 +89,19 @@ fn scan_path(
         }
     }
 
-    let events = load_or_parse_log(storage, "grok", path, LOG_CACHE_SCHEMA_VERSION, parse_jsonl)
-        .map_err(|error| match error {
-            LogCacheError::Storage(_) => GrokError::Storage,
-            LogCacheError::Encode(_) => GrokError::LocalUsage,
-        })?
-        .ok_or(GrokError::LocalUsage)?;
+    let events = load_or_parse_log(
+        storage,
+        "grok",
+        path,
+        LOG_CACHE_SCHEMA_VERSION,
+        None,
+        parse_jsonl,
+    )
+    .map_err(|error| match error {
+        LogCacheError::Storage(_) => GrokError::Storage,
+        LogCacheError::Encode(_) => GrokError::LocalUsage,
+    })?
+    .ok_or(GrokError::LocalUsage)?;
     storage.prune_log_events("grok", &HashSet::from([path.to_path_buf()]))?;
     Ok(aggregate(events, now, pricing))
 }

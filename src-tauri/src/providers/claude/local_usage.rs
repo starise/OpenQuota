@@ -18,7 +18,7 @@ use crate::{
 use super::ClaudeError;
 use crate::providers::{
     daily_usage::DailyUsageAccumulator,
-    log_usage::{load_or_parse_log, parse_log_timestamp},
+    log_usage::{load_or_parse_log, parse_log_timestamp, LogWindow},
     pi_usage,
 };
 
@@ -73,6 +73,10 @@ pub fn scan_local_usage(
             provider_id,
             &path,
             LOG_CACHE_SCHEMA_VERSION,
+            Some(LogWindow {
+                since: since_date,
+                timestamp: |event: &ClaudeTokenEvent| event.timestamp,
+            }),
             parse_jsonl,
         )
         .map_err(|_| ClaudeError::LocalUsage)?

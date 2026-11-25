@@ -36,6 +36,12 @@ pub struct ProviderAccountUpdate {
     pub payload: String,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct LogCacheEntry {
+    pub events_json: Option<String>,
+    pub indexed_version: Option<u8>,
+}
+
 impl Storage {
     pub fn open(path: &Path) -> Result<Self, StorageError> {
         if let Some(parent) = path.parent() {
@@ -99,6 +105,18 @@ impl Storage {
         if !Self::has_column(&connection, "provider_snapshots", "identity_key")? {
             connection.execute(
                 "ALTER TABLE provider_snapshots ADD COLUMN identity_key TEXT",
+                [],
+            )?;
+        }
+        if !Self::has_column(&connection, "log_file_cache", "indexed_version")? {
+            connection.execute(
+                "ALTER TABLE log_file_cache ADD COLUMN indexed_version INTEGER",
+                [],
+            )?;
+        }
+        if !Self::has_column(&connection, "log_file_cache", "latest_event_at")? {
+            connection.execute(
+                "ALTER TABLE log_file_cache ADD COLUMN latest_event_at INTEGER",
                 [],
             )?;
         }
@@ -183,19 +201,32 @@ impl Storage {
         path: &Path,
         size: u64,
         modified_nanos: i64,
-    ) -> Result<Option<String>, StorageError> {
+        window: Option<(u8, i64)>,
+    ) -> Result<Option<LogCacheEntry>, StorageError> {
+        let (version, since) = window.map_or((None, None), |(version, since)| {
+            (Some(version), Some(since))
+        });
         let connection = self.connection()?;
         connection
             .query_row(
-                "SELECT events_json FROM log_file_cache
+                "SELECT CASE WHEN indexed_version = ?5 AND latest_event_at < ?6
+                             THEN NULL ELSE events_json END, indexed_version
+                 FROM log_file_cache
                  WHERE provider_id = ?1 AND path = ?2 AND size = ?3 AND modified_nanos = ?4",
                 params![
                     provider_id,
                     path.to_string_lossy(),
                     size as i64,
-                    modified_nanos
+                    modified_nanos,
+                    version,
+                    since,
                 ],
-                |row| row.get(0),
+                |row| {
+                    Ok(LogCacheEntry {
+                        events_json: row.get(0)?,
+                        indexed_version: row.get(1)?,
+                    })
+                },
             )
             .optional()
             .map_err(StorageError::from)
@@ -208,21 +239,29 @@ impl Storage {
         size: u64,
         modified_nanos: i64,
         events_json: &str,
+        event_index: Option<(u8, Option<i64>)>,
     ) -> Result<(), StorageError> {
+        let (version, latest) =
+            event_index.map_or((None, None), |(version, latest)| (Some(version), latest));
         let connection = self.connection()?;
         connection.execute(
-            "INSERT INTO log_file_cache(path, size, modified_nanos, events_json, provider_id)
-             VALUES (?1, ?2, ?3, ?4, ?5)
+            "INSERT INTO log_file_cache(path, size, modified_nanos, events_json, provider_id,
+                                        indexed_version, latest_event_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT(provider_id, path) DO UPDATE SET
                size = excluded.size,
                modified_nanos = excluded.modified_nanos,
-               events_json = excluded.events_json",
+               events_json = excluded.events_json,
+               indexed_version = excluded.indexed_version,
+               latest_event_at = excluded.latest_event_at",
             params![
                 path.to_string_lossy(),
                 size as i64,
                 modified_nanos,
                 events_json,
-                provider_id
+                provider_id,
+                version,
+                latest,
             ],
         )?;
         Ok(())
@@ -728,7 +767,7 @@ mod tests {
             ("claude", &claude_current),
         ] {
             storage
-                .save_log_events(provider, path, 10, 20, "[]")
+                .save_log_events(provider, path, 10, 20, "[]", None)
                 .unwrap();
         }
 
@@ -738,20 +777,22 @@ mod tests {
 
         assert_eq!(
             storage
-                .load_log_events("codex", &codex_old, 10, 20)
+                .load_log_events("codex", &codex_old, 10, 20, None)
                 .unwrap(),
             None
         );
         assert_eq!(
             storage
-                .load_log_events("codex", &codex_current, 10, 20)
-                .unwrap(),
+                .load_log_events("codex", &codex_current, 10, 20, None)
+                .unwrap()
+                .and_then(|entry| entry.events_json),
             Some("[]".to_owned())
         );
         assert_eq!(
             storage
-                .load_log_events("claude", &claude_current, 10, 20)
-                .unwrap(),
+                .load_log_events("claude", &claude_current, 10, 20, None)
+                .unwrap()
+                .and_then(|entry| entry.events_json),
             Some("[]".to_owned())
         );
     }
@@ -762,18 +803,24 @@ mod tests {
         let storage = Storage::open(&directory.path().join("openquota.db")).unwrap();
         let shared = PathBuf::from("/synced/session.jsonl");
         storage
-            .save_log_events("claude", &shared, 10, 20, "claude")
+            .save_log_events("claude", &shared, 10, 20, "claude", None)
             .unwrap();
         storage
-            .save_log_events("codex", &shared, 10, 20, "codex")
+            .save_log_events("codex", &shared, 10, 20, "codex", None)
             .unwrap();
 
         assert_eq!(
-            storage.load_log_events("claude", &shared, 10, 20).unwrap(),
+            storage
+                .load_log_events("claude", &shared, 10, 20, None)
+                .unwrap()
+                .and_then(|entry| entry.events_json),
             Some("claude".to_owned())
         );
         assert_eq!(
-            storage.load_log_events("codex", &shared, 10, 20).unwrap(),
+            storage
+                .load_log_events("codex", &shared, 10, 20, None)
+                .unwrap()
+                .and_then(|entry| entry.events_json),
             Some("codex".to_owned())
         );
     }
@@ -800,12 +847,19 @@ mod tests {
         let storage = Storage::open(&path).unwrap();
         assert_eq!(
             storage
-                .load_log_events("codex", PathBuf::from("old.jsonl").as_path(), 10, 20)
+                .load_log_events("codex", PathBuf::from("old.jsonl").as_path(), 10, 20, None)
                 .unwrap(),
             None
         );
         storage
-            .save_log_events("codex", PathBuf::from("new.jsonl").as_path(), 10, 20, "[]")
+            .save_log_events(
+                "codex",
+                PathBuf::from("new.jsonl").as_path(),
+                10,
+                20,
+                "[]",
+                None,
+            )
             .unwrap();
     }
 }

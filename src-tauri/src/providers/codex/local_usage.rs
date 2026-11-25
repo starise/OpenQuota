@@ -19,7 +19,7 @@ use crate::{
 use super::CodexError;
 use crate::providers::{
     daily_usage::DailyUsageAccumulator,
-    log_usage::{load_or_parse_log, parse_log_timestamp, LogCacheError},
+    log_usage::{load_or_parse_log, parse_log_timestamp, LogCacheError, LogWindow},
     pi_usage,
 };
 
@@ -88,6 +88,10 @@ fn scan_codex_events(
             "codex",
             &path,
             LOG_CACHE_SCHEMA_VERSION,
+            Some(LogWindow {
+                since: since_date,
+                timestamp: |event: &TokenEvent| event.timestamp,
+            }),
             parse_jsonl,
         )
         .map_err(|error| match error {
@@ -897,6 +901,7 @@ mod tests {
                 fingerprint.size,
                 fingerprint.modified_nanos,
                 r#"{"schema_version":2,"events":[{"timestamp":"2026-03-10T08:01:00Z","model":"gpt-5.4","input":10,"cached":0,"output":5,"reasoning":0,"total":15,"is_fast":false}]}"#,
+                None,
             )
             .unwrap();
 
@@ -910,8 +915,16 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].model, "codex-auto-review");
         let cached = storage
-            .load_log_events("codex", &path, fingerprint.size, fingerprint.modified_nanos)
+            .load_log_events(
+                "codex",
+                &path,
+                fingerprint.size,
+                fingerprint.modified_nanos,
+                None,
+            )
             .unwrap()
+            .unwrap()
+            .events_json
             .unwrap();
         let cached = serde_json::from_str::<serde_json::Value>(&cached).unwrap();
         assert_eq!(cached["schema_version"], 3);
