@@ -9,7 +9,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use thiserror::Error;
 
 use crate::{
-    models::{AppSettings, DailyUsage, ProviderSnapshot},
+    models::{AppSettings, ProviderSnapshot},
     providers::CacheIdentity,
 };
 
@@ -50,14 +50,6 @@ impl Storage {
                payload TEXT NOT NULL,
                refreshed_at TEXT NOT NULL,
                identity_key TEXT
-             );
-             CREATE TABLE IF NOT EXISTS daily_usage (
-               provider_id TEXT NOT NULL,
-               date TEXT NOT NULL,
-               tokens INTEGER NOT NULL,
-               estimated_cost_usd REAL,
-               estimate_complete INTEGER NOT NULL,
-               PRIMARY KEY(provider_id, date)
              );
              CREATE TABLE IF NOT EXISTS log_file_cache (
                provider_id TEXT NOT NULL,
@@ -168,9 +160,7 @@ impl Storage {
         identity_key: Option<&str>,
     ) -> Result<(), StorageError> {
         let payload = serde_json::to_string(snapshot)?;
-        let mut connection = self.connection()?;
-        let transaction = connection.transaction()?;
-        transaction.execute(
+        self.connection()?.execute(
             "INSERT INTO provider_snapshots(provider_id, payload, refreshed_at, identity_key)
              VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT(provider_id) DO UPDATE SET
@@ -184,14 +174,6 @@ impl Storage {
                 identity_key,
             ],
         )?;
-        transaction.execute(
-            "DELETE FROM daily_usage WHERE provider_id = ?1",
-            [&snapshot.provider_id],
-        )?;
-        for day in &snapshot.usage.daily {
-            Self::insert_day(&transaction, &snapshot.provider_id, day)?;
-        }
-        transaction.commit()?;
         Ok(())
     }
 
@@ -451,26 +433,6 @@ impl Storage {
     pub fn clear_panel_height(&self) -> Result<(), StorageError> {
         self.connection()?
             .execute("DELETE FROM panel_state WHERE id = 1", [])?;
-        Ok(())
-    }
-
-    fn insert_day(
-        transaction: &rusqlite::Transaction<'_>,
-        provider_id: &str,
-        day: &DailyUsage,
-    ) -> Result<(), rusqlite::Error> {
-        transaction.execute(
-            "INSERT INTO daily_usage(
-               provider_id, date, tokens, estimated_cost_usd, estimate_complete
-             ) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![
-                provider_id,
-                day.date,
-                day.tokens as i64,
-                day.estimated_cost_usd,
-                day.estimate_complete as i64
-            ],
-        )?;
         Ok(())
     }
 
