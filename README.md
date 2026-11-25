@@ -111,7 +111,7 @@ New features are welcome when they provide clear value without introducing unnec
 ### Requirements
 
 - Node.js 26 LTS
-- pnpm 11.11.0
+- pnpm 12.23.0
 - Stable Rust toolchain
 - [Tauri 2 platform prerequisites](https://v2.tauri.app/start/prerequisites/)
 
