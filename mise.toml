@@ -1,0 +1,6 @@
+[tools]
+node = "26"
+rust = { version = "stable", components = ["clippy", "rustfmt"] }
+
+[settings]
+idiomatic_version_file_enable_tools = ["pnpm"]
