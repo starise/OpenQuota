@@ -1,11 +1,11 @@
 <script lang="ts">
   import { flip } from 'svelte/animate';
-  import type { AppSettings, ProviderLayout } from './types';
-  import type { ProviderCatalogIndex } from './metrics';
   import Icon from './Icon.svelte';
-  import ProviderIcon from './ProviderIcon.svelte';
+  import type { ProviderCatalogIndex } from './metrics';
   import { reorderFlip } from './motion';
+  import ProviderIcon from './ProviderIcon.svelte';
   import { pointerReorder } from './pointerReorder';
+  import type { AppSettings, ProviderLayout } from './types';
 
   interface Props {
     settings: AppSettings;
@@ -51,7 +51,9 @@
 
 <section class="screen customize-screen" aria-label="Customize">
   <div class="customize-list" role="list">
-    {#each settings.providers.filter( (provider) => catalog.provider(provider.id) ) as provider (provider.id)}
+    {#each settings.providers.filter((provider) =>
+      catalog.provider(provider.id),
+    ) as provider (provider.id)}
       <div
         role="listitem"
         class:inactive={!provider.enabled}
@@ -82,13 +84,12 @@
           aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
           ><Icon name="grip-lines" size={16} strokeWidth={2} /></span
         >
-        <button class="provider-list-main" type="button" onclick={() => onOpen(provider.id)}
-          ><ProviderIcon providerId={provider.id} /><span
-            ><b>{providerDisplayName(provider.id)}</b><small
-              >{provider.metrics.length} metrics</small
-            ></span
-          ></button
-        >
+        <button class="provider-list-main" type="button" onclick={() => onOpen(provider.id)}>
+          <ProviderIcon providerId={provider.id} /><span
+            ><b>{providerDisplayName(provider.id)}</b
+            ><small>{provider.metrics.length} metrics</small></span
+          >
+        </button>
         <label class="switch"
           ><input
             aria-label={`Enable ${provider.id}`}
@@ -96,15 +97,16 @@
             checked={provider.enabled}
             onchange={(event) =>
               updateProvider({ ...provider, enabled: event.currentTarget.checked })}
-          /><span></span></label
+          ><span></span></label
         >
         <button
           class="chevron"
           type="button"
           aria-label={`Customize ${provider.id}`}
           onclick={() => onOpen(provider.id)}
-          ><Icon name="chevron-right" size={13} strokeWidth={2.2} /></button
         >
+          <Icon name="chevron-right" size={13} strokeWidth={2.2} />
+        </button>
       </div>
     {/each}
   </div>

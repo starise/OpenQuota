@@ -1,10 +1,10 @@
-import type { ProviderCatalogIndex } from './metrics';
 import {
   formatMetricValue,
   formatSpendValue,
   formatUsageCost,
   totalSpendRingCenter,
 } from './metricFormat';
+import type { ProviderCatalogIndex } from './metrics';
 import { formatLimit, formatReset, projectPace } from './pacing';
 import {
   providerFamily,

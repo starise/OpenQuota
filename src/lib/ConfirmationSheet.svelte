@@ -58,22 +58,25 @@
     aria-labelledby="confirmation-title"
     aria-describedby="confirmation-message"
   >
-    <span class="confirmation-sheet__icon"><Icon name="warning" size={18} strokeWidth={1.9} /></span
+    <span class="confirmation-sheet__icon"
+      ><Icon name="warning" size={18} strokeWidth={1.9} /></span
     >
     <div class="confirmation-sheet__copy">
       <h1 id="confirmation-title">{title}</h1>
       <p id="confirmation-message">{message}</p>
     </div>
     <div class="confirmation-sheet__actions">
-      <button bind:this={cancelButton} type="button" disabled={pending} onclick={onCancel}
-        >Cancel</button
-      >
+      <button bind:this={cancelButton} type="button" disabled={pending} onclick={onCancel}>
+        Cancel
+      </button>
       <button
         class="confirmation-sheet__confirm"
         type="button"
         disabled={pending}
-        onclick={onConfirm}>{pending ? 'Resetting…' : confirmLabel}</button
+        onclick={onConfirm}
       >
+        {pending ? 'Resetting…' : confirmLabel}
+      </button>
     </div>
   </div>
 </div>

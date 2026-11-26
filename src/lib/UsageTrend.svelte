@@ -90,7 +90,8 @@
       {#if detailVisible}
         <aside class="trend-detail" onmouseenter={revealDetail} onmouseleave={concealDetail}>
           <header>
-            <strong>Usage Trend</strong><span
+            <strong>Usage Trend</strong
+            ><span
               >{hoveredDate
                 ? `${dayLabel(highlightedPoint.date)} · ${compact(highlightedPoint.tokens)} tokens`
                 : `peak ${compact(peak.tokens)} tokens`}</span
@@ -111,9 +112,8 @@
             {/each}
           </div>
           <div class="trend-detail__axis">
-            <span>{dayLabel(points[0]?.date ?? '')}</span><span
-              >{dayLabel(points.at(-1)?.date ?? '')}</span
-            >
+            <span>{dayLabel(points[0]?.date ?? '')}</span
+            ><span>{dayLabel(points.at(-1)?.date ?? '')}</span>
           </div>
           <small class="trend-detail__source">{sourceNote}</small>
         </aside>

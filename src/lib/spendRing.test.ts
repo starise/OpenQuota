@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ringSectorPath, spendRingArcs, type SpendRingGeometry } from './spendRing';
+import { ringSectorPath, type SpendRingGeometry, spendRingArcs } from './spendRing';
 
 const geometry: SpendRingGeometry = {
   ringDiameter: 104,

@@ -16,7 +16,7 @@
   alt={decorative ? '' : 'OpenQuota'}
   aria-hidden={decorative}
   draggable="false"
-/>
+>
 
 <style>
   img {

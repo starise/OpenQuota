@@ -9,10 +9,27 @@
 </p>
 
 <p align="center">
-  <a href="#project-philosophy"><img src="https://img.shields.io/badge/status-actively%20maintained-brightgreen" alt="Actively maintained"></a>
-  <a href="https://github.com/starise/OpenQuota/actions/workflows/ci.yml"><img src="https://github.com/starise/OpenQuota/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
-  <a href="https://github.com/starise/OpenQuota/releases/latest"><img src="https://img.shields.io/github/v/release/starise/OpenQuota" alt="Latest release"></a>
-  <a href="https://github.com/starise/OpenQuota/releases"><img src="https://img.shields.io/github/downloads/starise/OpenQuota/total" alt="Total downloads"></a>
+  <a href="#project-philosophy"
+    ><img
+      src="https://img.shields.io/badge/status-actively%20maintained-brightgreen"
+      alt="Actively maintained"
+    ></a
+  >
+  <a href="https://github.com/starise/OpenQuota/actions/workflows/ci.yml"
+    ><img
+      src="https://github.com/starise/OpenQuota/actions/workflows/ci.yml/badge.svg"
+      alt="CI status"
+    ></a
+  >
+  <a href="https://github.com/starise/OpenQuota/releases/latest"
+    ><img src="https://img.shields.io/github/v/release/starise/OpenQuota" alt="Latest release"></a
+  >
+  <a href="https://github.com/starise/OpenQuota/releases"
+    ><img
+      src="https://img.shields.io/github/downloads/starise/OpenQuota/total"
+      alt="Total downloads"
+    ></a
+  >
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>
 
@@ -32,7 +49,11 @@
 OpenQuota brings usage data from Claude Code, Codex, Cursor, Copilot, and other AI coding providers into one compact desktop dashboard. Monitor session and weekly limits, reset times, token usage, and estimated spend without switching between tools.
 
 <p align="center">
-  <img src="assets/openquota-demo.gif" alt="OpenQuota dashboard showing AI usage in light and dark themes" width="840">
+  <img
+    src="assets/openquota-demo.gif"
+    alt="OpenQuota dashboard showing AI usage in light and dark themes"
+    width="840"
+  >
 </p>
 
 ## Download
@@ -166,5 +187,8 @@ Bug reports, fixes, provider compatibility updates, and focused improvements are
 ---
 
 <p align="center">
-  <sub>Originally created by <a href="https://github.com/deviffyy">deviffyy</a> &middot; Maintained by <a href="https://github.com/starise">starise</a></sub>
+  <sub
+    >Originally created by <a href="https://github.com/deviffyy">deviffyy</a> &middot; Maintained by
+    <a href="https://github.com/starise">starise</a></sub
+  >
 </p>

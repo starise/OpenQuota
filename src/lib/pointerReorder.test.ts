@@ -1,6 +1,6 @@
 import { fireEvent, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { pointerReorder, reorderTargetAt, type ReorderFrame } from './pointerReorder';
+import { pointerReorder, type ReorderFrame, reorderTargetAt } from './pointerReorder';
 
 afterEach(() => {
   document.body.innerHTML = '';

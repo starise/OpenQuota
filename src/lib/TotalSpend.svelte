@@ -2,12 +2,12 @@
   import { onDestroy } from 'svelte';
   import Icon from './Icon.svelte';
   import { formatSpendValue, formatUsageCost, totalSpendRingCenter } from './metricFormat';
-  import SelectMenu from './SelectMenu.svelte';
   import type { ProviderCatalogIndex } from './metrics';
+  import { providerFamily } from './providerIconPaths';
+  import SelectMenu from './SelectMenu.svelte';
   import { TOTAL_SPEND_GEOMETRY } from './shareCard';
   import { ringSectorPath, spendRingArcs } from './spendRing';
   import { emptySpendMessage, projectSpend, type SpendProjection } from './totalSpend';
-  import { providerFamily } from './providerIconPaths';
   import type { AppSettings, UsageHistory } from './types';
 
   interface Props {
@@ -99,7 +99,8 @@
         data-tooltip={`Only includes ${providerNames.join(' and ')}.`}
         data-tooltip-align="left"
         aria-label={`Only includes ${providerNames.join(' and ')}`}
-        role="img"><Icon name="about" size={13} strokeWidth={1.9} /></span
+        role="img"
+        ><Icon name="about" size={13} strokeWidth={1.9} /></span
       >
     </div>
     <button
@@ -109,8 +110,9 @@
       data-tooltip="Share Screenshot"
       data-tooltip-align="right"
       onclick={share}
-      ><Icon name={shareCopied ? 'check' : 'share'} size={14} strokeWidth={1.8} /></button
     >
+      <Icon name={shareCopied ? 'check' : 'share'} size={14} strokeWidth={1.8} />
+    </button>
   </div>
   <div class="total-card">
     <div class="period-switcher" aria-label="Total Spend period">
@@ -119,13 +121,18 @@
         style={`transform: translateX(${periodIndex * 100}%)`}
         aria-hidden="true"
       ></span>
-      {#each [['today', 'Today'], ['yesterday', 'Yesterday'], ['last30Days', '30 Days']] as option (option[0])}
+      {#each [
+        ['today', 'Today'],
+        ['yesterday', 'Yesterday'],
+        ['last30Days', '30 Days'],
+      ] as option (option[0])}
         <button
           class:active={settings.totalSpendPeriod === option[0]}
           type="button"
           onclick={() => patch({ totalSpendPeriod: option[0] as AppSettings['totalSpendPeriod'] })}
-          >{option[1]}</button
         >
+          {option[1]}
+        </button>
       {/each}
     </div>
     {#if projection.centerValue === null}
@@ -149,9 +156,8 @@
             {/each}
           </svg>
           <div class="spend-ring__label" data-tooltip={centerTooltip(projection.centerValue)}>
-            <strong>{ringCenter(projection.centerValue).primary}</strong><span
-              >{ringCenter(projection.centerValue).unit}</span
-            >
+            <strong>{ringCenter(projection.centerValue).primary}</strong
+            ><span>{ringCenter(projection.centerValue).unit}</span>
           </div>
         </div>
         <div class="spend-legend">

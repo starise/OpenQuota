@@ -73,7 +73,7 @@
         maxlength="48"
         placeholder="Name"
         aria-label="Name"
-      />
+      >
       <p id="rename-message">Leave the name empty to go back to the default.</p>
       <div class="rename-sheet__actions">
         <button type="button" onclick={onCancel}>Cancel</button>

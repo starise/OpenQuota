@@ -65,9 +65,8 @@
           >
         </div>
         <div class="model-usage-secondary">
-          <span>{percents[index]}%</span><span
-            >{formatMetricValue(model.totalTokens, 'count', 'row', 'tokens')}</span
-          >
+          <span>{percents[index]}%</span
+          ><span>{formatMetricValue(model.totalTokens, 'count', 'row', 'tokens')}</span>
         </div>
         <div class="model-usage-meter" aria-hidden="true">
           <i style={`width:${Math.min(shares[index] * 100, 100)}%`}></i>

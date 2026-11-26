@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import baseCss from '../styles/base.css?raw';
-import layoutCss from '../styles/layout.css?raw';
-import componentCss from '../styles/components.css?raw';
-import tokensCss from '../styles/tokens.css?raw';
 import tauriConfigSource from '../../src-tauri/tauri.conf.json?raw';
+import baseCss from '../styles/base.css?raw';
+import componentCss from '../styles/components.css?raw';
+import layoutCss from '../styles/layout.css?raw';
+import tokensCss from '../styles/tokens.css?raw';
 import { coLocatedComponentCss } from './uiStyleSources';
 
 const css = `${layoutCss}\n${componentCss}\n${coLocatedComponentCss}`;

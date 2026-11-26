@@ -1,5 +1,5 @@
-import { checkForApplicationUpdates, installApplicationUpdate, openUpdatePage } from './backend';
 import { SvelteDate } from 'svelte/reactivity';
+import { checkForApplicationUpdates, installApplicationUpdate, openUpdatePage } from './backend';
 import type { UpdateFailure, UpdateProgress, UpdateStatus } from './types';
 
 const USAGE_REFRESH_INTERVAL_MS = 5 * 60_000;

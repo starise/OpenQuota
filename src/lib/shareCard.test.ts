@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { codexState, providerCatalogIndex, settingsState } from '../test/appFixtures';
 import { ProviderCatalogIndex } from './metrics';
-import totalSpendSource from './TotalSpend.svelte?raw';
 import {
   buildProviderShareRows as buildProviderShareRowsWithCatalog,
   providerIconPlacement,
@@ -14,6 +13,7 @@ import {
   TOTAL_SPEND_PERIOD_LABELS,
   totalSpendShareCardHeight,
 } from './shareCard';
+import totalSpendSource from './TotalSpend.svelte?raw';
 import type { AppSettings, ProviderLayout, ProviderSnapshot } from './types';
 
 function buildProviderShareRows(

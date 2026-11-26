@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AppSettings, SettingsViewState } from './types';
 import { SettingsController } from './settingsController.svelte';
+import type { AppSettings, SettingsViewState } from './types';
 
 const mocks = vi.hoisted(() => ({
   getAppSettings: vi.fn(),

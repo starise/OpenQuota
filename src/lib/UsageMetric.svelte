@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import Icon from './Icon.svelte';
-  import { formatMetricValue, formatUsageCost } from './metricFormat';
   import ModelUsageDetail from './ModelUsageDetail.svelte';
+  import { formatMetricValue, formatUsageCost } from './metricFormat';
   import type { UsagePeriod } from './types';
 
   interface Props {
@@ -89,7 +89,8 @@
 
 <div class="usage-row">
   <span
-    >{label}{#if period?.unknownModels?.length}<i
+    >{label}{#if period?.unknownModels?.length}
+      <i
         class="usage-label-warning"
         data-tooltip-align="left"
         data-tooltip={unknownModelTooltip(
@@ -98,7 +99,8 @@
         )}
         aria-label="This period used a model with unknown pricing"
         ><Icon name="warning" size={10} strokeWidth={2.2} /></i
-      >{/if}</span
+      >
+    {/if}</span
   >
   <button
     type="button"
@@ -108,8 +110,10 @@
     onmouseenter={scheduleShow}
     onmouseleave={scheduleHide}
     onfocus={scheduleShow}
-    onblur={scheduleHide}>{reading(period)}</button
+    onblur={scheduleHide}
   >
+    {reading(period)}
+  </button>
 </div>
 
 {#if open && period?.modelBreakdown}

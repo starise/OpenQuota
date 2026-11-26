@@ -1,14 +1,14 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { flip } from 'svelte/animate';
-  import type { ProviderCatalogIndex } from './metrics';
-  import type { AppSettings, MetricLayout, MetricSection, ProviderLayout } from './types';
   import Icon from './Icon.svelte';
+  import type { ProviderCatalogIndex } from './metrics';
+  import { reorderFlip } from './motion';
   import ProviderApiKeySection from './ProviderApiKeySection.svelte';
   import ProviderNameSection from './ProviderNameSection.svelte';
-  import { reorderFlip } from './motion';
   import { pointerReorder } from './pointerReorder';
   import { canRenameProvider } from './providerNames';
+  import type { AppSettings, MetricLayout, MetricSection, ProviderLayout } from './types';
 
   interface Props {
     settings: AppSettings;
@@ -185,18 +185,21 @@
                 >{metricDefinition(metric.id)?.label ?? metric.id}</span
               >
               <span class="customize-metric-pin-slot">
-                {#if metricDefinition(metric.id)?.pinnable}<button
+                {#if metricDefinition(metric.id)?.pinnable}
+                  <button
                     class:pinned={metric.pinned}
                     class="pin-button"
                     type="button"
                     aria-label={`${metric.pinned ? 'Unpin' : 'Pin'} ${metricDefinition(metric.id)?.label}`}
                     onclick={(event) => togglePin(metric, event.currentTarget)}
-                    ><Icon
+                  >
+                    <Icon
                       name={metric.pinned ? 'star-filled' : 'star'}
                       size={15}
                       strokeWidth={1.7}
-                    /></button
-                  >{/if}
+                    />
+                  </button>
+                {/if}
               </span>
               <label class="switch"
                 ><input
@@ -208,7 +211,7 @@
                       ...metric,
                       enabled: event.currentTarget.checked,
                     })}
-                /><span></span></label
+                ><span></span></label
               >
             </div>
           {/each}

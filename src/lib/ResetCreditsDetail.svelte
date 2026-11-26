@@ -178,29 +178,36 @@
                       type="button"
                       disabled={pendingExpiry !== null}
                       onclick={() => confirmClaim(entry.expiry)}
-                      >{pendingExpiry === entry.expiry ? 'Resetting…' : 'Use reset'}</button
                     >
+                      {pendingExpiry === entry.expiry ? 'Resetting…' : 'Use reset'}
+                    </button>
                     <button
                       bind:this={cancelButton}
                       type="button"
                       disabled={pendingExpiry !== null}
-                      onclick={() => void cancelClaim()}>Cancel</button
+                      onclick={() => void cancelClaim()}
                     >
+                      Cancel
+                    </button>
                   </div>
                 </div>
               {:else}
                 <div class="reset-entry">
                   <span>{entry.exact}</span>
                   <div class="reset-trailing">
-                    {#if entry.relative}<small>{entry.relative}</small>{/if}
+                    {#if entry.relative}
+                      <small>{entry.relative}</small>
+                    {/if}
                     <button
                       class="reset-use"
                       type="button"
                       data-reset-trigger={index}
                       aria-label={`Use reset expiring ${entry.exact}`}
                       disabled={pendingExpiry !== null}
-                      onclick={() => void beginClaim(entry.expiry, index)}>Use</button
+                      onclick={() => void beginClaim(entry.expiry, index)}
                     >
+                      Use
+                    </button>
                   </div>
                 </div>
               {/if}

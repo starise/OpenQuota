@@ -210,11 +210,9 @@
           onkeydown={optionKeydown}
         >
           <span class="select-menu__check"
-            >{#if option.value === value}<Icon
-                name="check"
-                size={12}
-                strokeWidth={2.2}
-              />{/if}</span
+            >{#if option.value === value}
+              <Icon name="check" size={12} strokeWidth={2.2} />
+            {/if}</span
           >
           <span>{option.label}</span>
         </button>

@@ -12,20 +12,22 @@
     "check": "svelte-check --tsconfig ./tsconfig.app.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint eslint.config.js vite.config.ts scripts/verify/*.js src && prettier --check '.github/**/*.{yml,yaml}' '*.{json,md,js,ts}' scripts/verify/*.js 'src/**/*.{ts,svelte,css}' src-tauri/tauri.conf.json src-tauri/capabilities/default.json",
-    "format": "prettier --write '.github/**/*.{yml,yaml}' '*.{json,md,js,ts}' scripts/verify/*.js 'src/**/*.{ts,svelte,css}' src-tauri/tauri.conf.json src-tauri/capabilities/default.json",
+    "lint": "biome ci --linter-enabled=false . && eslint \"src/**/*.svelte\" \"src/**/*.svelte.ts\"",
+    "format": "biome check --write --linter-enabled=false .",
     "verify:versions": "node scripts/verify/verify-versions.js",
     "verify:contracts": "node scripts/verify/verify-command-contract.js && node scripts/verify/verify-model-contract.js && node scripts/verify/verify-provider-registry-contract.js && node scripts/verify/verify-single-instance-contract.js && node scripts/verify/verify-release-policy.js",
     "verify:frontend": "pnpm verify:versions && pnpm verify:contracts && pnpm lint && pnpm check && pnpm test && pnpm build",
     "verify:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check && cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo test --locked --manifest-path src-tauri/Cargo.toml --all-targets",
     "verify": "pnpm verify:frontend && pnpm verify:rust",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "lint:biome": "biome lint ."
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.5",
     "svelte": "^5.56.10"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.9",
     "@eslint/js": "^10.0.0",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@tauri-apps/cli": "^2.12.6",
@@ -36,8 +38,6 @@
     "eslint-plugin-svelte": "^3.23.0",
     "globals": "^17.11.0",
     "jsdom": "^29.1.1",
-    "prettier": "^3.9.6",
-    "prettier-plugin-svelte": "^4.1.1",
     "svelte-check": "^4.7.6",
     "typescript": "^6.0.0",
     "typescript-eslint": "^8.68.0",

@@ -2,27 +2,27 @@
   import { onDestroy, tick } from 'svelte';
   import { flip } from 'svelte/animate';
   import { scale, slide } from 'svelte/transition';
+  import Icon from './Icon.svelte';
+  import MetricRenderer from './MetricRenderer.svelte';
+  import type { ProviderCatalogIndex } from './metrics';
   import { reorderFlip, springMotion } from './motion';
-  import { pointerReorder } from './pointerReorder';
   import ProviderIcon from './ProviderIcon.svelte';
   import ProviderLinks from './ProviderLinks.svelte';
   import ProviderNoticeRow from './ProviderNoticeRow.svelte';
-  import Icon from './Icon.svelte';
-  import MetricRenderer from './MetricRenderer.svelte';
+  import { pointerReorder } from './pointerReorder';
+  import { canRenameProvider } from './providerNames';
   import TotalSpend from './TotalSpend.svelte';
   import type { SpendProjection } from './totalSpend';
-  import type { ProviderCatalogIndex } from './metrics';
-  import { canRenameProvider } from './providerNames';
   import type {
     AppSettings,
     MetricLayout,
     ProviderLayout,
     ProviderSnapshot,
-    UpdateProgress,
     UpdateFailure,
+    UpdateProgress,
+    UpdateStatus,
     UsageHistory,
     UsageViewState,
-    UpdateStatus,
   } from './types';
 
   interface Props {
@@ -327,10 +327,12 @@
     <div>
       <strong>Update Available</strong>
       <span>OpenQuota {updateStatus.version} is ready to download.</span>
-      {#if updateStatus.body}<details class="update-notes">
+      {#if updateStatus.body}
+        <details class="update-notes">
           <summary>What’s new</summary>
           <p>{updateStatus.body}</p>
-        </details>{/if}
+        </details>
+      {/if}
       {#if installingUpdate && updateProgress}
         <div
           class="update-progress"
@@ -356,9 +358,11 @@
                 : `Downloading update… ${updateProgress.percent}%`}
         </small>
       {/if}
-      {#if updateError}<div class="update-error" role="alert">
+      {#if updateError}
+        <div class="update-error" role="alert">
           <strong>{updateError.message}</strong><small>{updateError.action}</small>
-        </div>{/if}
+        </div>
+      {/if}
     </div>
     <div class="update-actions">
       <button
@@ -366,18 +370,19 @@
         class="update-primary-action"
         onclick={updateStatus.installable ? onInstallUpdate : onOpenUpdatePage}
         disabled={installingUpdate}
-        >{updateStatus.installable
+      >
+        {updateStatus.installable
           ? installingUpdate
             ? 'Updating…'
             : updateError?.retryable
               ? 'Try Again'
               : 'Install Update'
-          : 'Download from GitHub'}</button
-      >
+          : 'Download from GitHub'}
+      </button>
       {#if updateStatus.installable && !installingUpdate}
-        <button type="button" class="update-release-action" onclick={onOpenUpdatePage}
-          >View Release</button
-        >
+        <button type="button" class="update-release-action" onclick={onOpenUpdatePage}>
+          View Release
+        </button>
       {/if}
     </div>
     <button
@@ -388,22 +393,26 @@
         onSettingsChange({
           ...settings,
           dismissedUpdateVersion: updateStatus?.version ?? null,
-        })}><Icon name="close" size={10} strokeWidth={2.2} /></button
+        })}
     >
+      <Icon name="close" size={10} strokeWidth={2.2} />
+    </button>
   </section>
 {/if}
 
 {#if !settings.detectionNoticeDismissed}
   <section class="detection-card" out:scale={{ start: 0.95, ...springMotion(reducedMotion) }}>
     <div>
-      <strong>Welcome to OpenQuota</strong><span
-        >We set you up with the AI tools found on your computer. Add or hide providers any time.</span
+      <strong>Welcome to OpenQuota</strong
+      ><span
+        >We set you up with the AI tools found on your computer. Add or hide providers any
+        time.</span
       >
     </div>
     <button type="button" onclick={onCustomize}>Open Customize</button>
-    <button class="dismiss" type="button" aria-label="Dismiss" onclick={dismissDetection}
-      ><Icon name="close" size={10} strokeWidth={2.2} /></button
-    >
+    <button class="dismiss" type="button" aria-label="Dismiss" onclick={dismissDetection}>
+      <Icon name="close" size={10} strokeWidth={2.2} />
+    </button>
   </section>
 {/if}
 
@@ -457,15 +466,18 @@
           tabindex="0"
           aria-label={`Move ${providerDisplayName(provider.id)}`}
           aria-describedby="reorder-instructions"
-          aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"><Icon name="grip-dots" size={13} /></span
+          aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+          ><Icon name="grip-dots" size={13} /></span
         >
         <h1>{providerDisplayName(provider.id)}</h1>
-        {#if snapshot.plan}<span class="plan">{snapshot.plan}</span>{/if}
-        {#if state?.snapshot && state.stale}<span
-            class="status-badge"
-            data-tooltip={stalenessTooltip(snapshot.refreshedAt)}
+        {#if snapshot.plan}
+          <span class="plan">{snapshot.plan}</span>
+        {/if}
+        {#if state?.snapshot && state.stale}
+          <span class="status-badge" data-tooltip={stalenessTooltip(snapshot.refreshedAt)}
             >Outdated<span class="sr-only">. {stalenessTooltip(snapshot.refreshedAt)}</span></span
-          >{/if}
+          >
+        {/if}
         <span
           class="provider-status-slot"
           class:active={Boolean(state?.refreshing || state?.error || snapshot.warnings.length > 0)}
@@ -479,7 +491,8 @@
               class="provider-warning"
               data-tooltip={state.error}
               data-tooltip-align="right"
-              aria-hidden="true"><Icon name="warning" size={12} strokeWidth={2} /></span
+              aria-hidden="true"
+              ><Icon name="warning" size={12} strokeWidth={2} /></span
             >
           {:else if snapshot.warnings.length > 0}
             <span
@@ -511,20 +524,26 @@
             >
             <span class="provider-error-row__message" role="alert">{state.error}</span>
             <span class="provider-error-row__actions">
-              {#if catalog.supportsApiKeyConfiguration(provider.id) && (state.errorKind === 'authentication' || state.errorKind === 'permission' || state.errorKind === 'credentialStorage')}
+              {#if catalog.supportsApiKeyConfiguration(provider.id) &&
+                (state.errorKind === 'authentication' ||
+                  state.errorKind === 'permission' ||
+                  state.errorKind === 'credentialStorage')}
                 <button
                   type="button"
                   aria-label={`Configure ${providerDisplayName(provider.id)}`}
-                  onclick={() => onOpenProviderCustomize(provider.id)}>Configure</button
+                  onclick={() => onOpenProviderCustomize(provider.id)}
                 >
+                  Configure
+                </button>
               {/if}
               <button
                 type="button"
                 aria-label={`${state.refreshing ? 'Retrying' : 'Retry'} ${providerDisplayName(provider.id)}`}
                 aria-disabled={state.refreshing}
                 onclick={(event) => void retryProvider(event, provider.id, state.refreshing)}
-                >{state.refreshing ? 'Retrying…' : 'Retry'}</button
               >
+                {state.refreshing ? 'Retrying…' : 'Retry'}
+              </button>
             </span>
           </div>
         {/if}
@@ -556,8 +575,9 @@
               aria-label={`Move ${metricDefinition(metric.id)?.label ?? metric.id}`}
               aria-describedby="reorder-instructions"
               aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-              ><Icon name="grip-lines" size={13} strokeWidth={2} /></button
             >
+              <Icon name="grip-lines" size={13} strokeWidth={2} />
+            </button>
             <MetricRenderer
               layout={metric}
               {snapshot}
@@ -615,8 +635,9 @@
                     aria-label={`Move ${metricDefinition(metric.id)?.label ?? metric.id}`}
                     aria-describedby="reorder-instructions"
                     aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-                    ><Icon name="grip-lines" size={13} strokeWidth={2} /></button
                   >
+                    <Icon name="grip-lines" size={13} strokeWidth={2} />
+                  </button>
                   <MetricRenderer
                     layout={metric}
                     {snapshot}
@@ -656,24 +677,29 @@
         type="button"
         role="menuitem"
         onclick={() => hideProvider(menuProvider.id)}
-        ><Icon name="power" size={15} />Hide {providerDisplayName(menuProvider.id)}</button
       >
-      <hr />
-      <button type="button" role="menuitem" onclick={() => onRefresh(menuProvider.id)}
-        ><Icon name="refresh" size={15} />Refresh {providerDisplayName(menuProvider.id)}</button
-      >
+        <Icon name="power" size={15} />Hide {providerDisplayName(menuProvider.id)}
+      </button>
+      <hr>
+      <button type="button" role="menuitem" onclick={() => onRefresh(menuProvider.id)}>
+        <Icon name="refresh" size={15} />Refresh {providerDisplayName(menuProvider.id)}
+      </button>
       {#if canRenameProvider(menuProvider.id, renamableProviderIds)}
-        <button type="button" role="menuitem" onclick={() => onRenameProvider(menuProvider.id)}
-          ><Icon name="edit" size={15} />Rename…</button
-        >
+        <button type="button" role="menuitem" onclick={() => onRenameProvider(menuProvider.id)}>
+          <Icon name="edit" size={15} />Rename…
+        </button>
       {/if}
-      <button type="button" role="menuitem" onclick={() => onOpenProviderCustomize(menuProvider.id)}
-        ><Icon name="sliders" size={15} />Customize…</button
+      <button
+        type="button"
+        role="menuitem"
+        onclick={() => onOpenProviderCustomize(menuProvider.id)}
       >
-      <hr />
-      <button type="button" role="menuitem" onclick={() => onShare(menuProvider.id)}
-        ><Icon name="share" size={15} />Share Screenshot</button
-      >
+        <Icon name="sliders" size={15} />Customize…
+      </button>
+      <hr>
+      <button type="button" role="menuitem" onclick={() => onShare(menuProvider.id)}>
+        <Icon name="share" size={15} />Share Screenshot
+      </button>
     </div>
   {/if}
 {/if}
@@ -696,8 +722,9 @@
         type="button"
         role="menuitem"
         onclick={() => patchMetric(metricProvider.id, menuMetric.id, { enabled: false })}
-        ><Icon name="power" size={15} />Hide</button
       >
+        <Icon name="power" size={15} />Hide
+      </button>
       {#if metricDefinition(menuMetric.id)?.pinnable}
         <button
           type="button"
@@ -708,21 +735,23 @@
             patchMetric(metricProvider.id, menuMetric.id, {
               pinned: !menuMetric.pinned,
             })}
-          ><Icon name={menuMetric.pinned ? 'star-filled' : 'star'} size={15} />{menuMetric.pinned
-            ? 'Unstar'
-            : 'Star for menu bar'}</button
         >
+          <Icon name={menuMetric.pinned ? 'star-filled' : 'star'} size={15} />{menuMetric.pinned
+            ? 'Unstar'
+            : 'Star for menu bar'}
+        </button>
       {/if}
-      <hr />
-      <button type="button" role="menuitem" onclick={() => onRefresh(metricProvider.id)}
-        ><Icon name="refresh" size={15} />Refresh {providerDisplayName(metricProvider.id)}</button
-      >
+      <hr>
+      <button type="button" role="menuitem" onclick={() => onRefresh(metricProvider.id)}>
+        <Icon name="refresh" size={15} />Refresh {providerDisplayName(metricProvider.id)}
+      </button>
       <button
         type="button"
         role="menuitem"
         onclick={() => onOpenProviderCustomize(metricProvider.id)}
-        ><Icon name="sliders" size={15} />Customize…</button
       >
+        <Icon name="sliders" size={15} />Customize…
+      </button>
     </div>
   {/if}
 {/if}

@@ -153,9 +153,9 @@
         <ProviderIcon {providerId} size={18} />
         <span class="api-key-provider">{providerName}</span>
         <i class:missing={status === 'notSet'} aria-hidden="true"></i>
-        <button bind:this={editorToggle} type="button" onclick={toggleOpen}
-          >{open ? 'Done' : status === 'notSet' ? 'Add' : 'Edit'}</button
-        >
+        <button bind:this={editorToggle} type="button" onclick={toggleOpen}>
+          {open ? 'Done' : status === 'notSet' ? 'Add' : 'Edit'}
+        </button>
       </div>
       {#if availabilityError}
         <div class="api-key-error availability-error" role="alert">{availabilityError}</div>
@@ -173,7 +173,7 @@
                   placeholder="Paste API key"
                   aria-label={`${providerName} API key`}
                   disabled={saving}
-                />
+                >
                 <button
                   class="field-icon"
                   type="button"
@@ -188,8 +188,10 @@
                   class="primary"
                   type="button"
                   disabled={!apiKey.trim() || saving}
-                  onclick={save}>{saving ? 'Saving…' : 'Save'}</button
+                  onclick={save}
                 >
+                  {saving ? 'Saving…' : 'Save'}
+                </button>
                 {#if overrideExternal}
                   <button type="button" disabled={saving} onclick={resetEditor}>Cancel</button>
                 {/if}
@@ -217,7 +219,7 @@
                   use:displayValue={sourceLabel}
                   aria-label={`${providerName} API key source`}
                   disabled
-                />
+                >
               </div>
               {#if confirmingRemoval}
                 <div
@@ -237,28 +239,36 @@
                       type="button"
                       disabled={saving}
                       onkeydown={handleRemovalKeydown}
-                      onclick={() => void cancelRemoval()}>Cancel</button
+                      onclick={() => void cancelRemoval()}
                     >
+                      Cancel
+                    </button>
                     <button
                       class="destructive"
                       type="button"
                       disabled={saving}
                       onkeydown={handleRemovalKeydown}
-                      onclick={() => void remove()}>{saving ? 'Removing…' : 'Remove key'}</button
+                      onclick={() => void remove()}
                     >
+                      {saving ? 'Removing…' : 'Remove key'}
+                    </button>
                   </div>
                 </div>
               {/if}
               {#if status === 'fromEnvironment' || status === 'fromConfig'}
                 <label class="api-key-override">
-                  <input type="checkbox" bind:checked={overrideExternal} disabled={saving} />
+                  <input type="checkbox" bind:checked={overrideExternal} disabled={saving}>
                   Override With a Custom Key
                 </label>
               {/if}
             {/if}
           {/key}
-          {#if error}<div class="api-key-error" role="alert">{error}</div>{/if}
-          {#if notice}<div class="api-key-notice" role="status">{notice}</div>{/if}
+          {#if error}
+            <div class="api-key-error" role="alert">{error}</div>
+          {/if}
+          {#if notice}
+            <div class="api-key-notice" role="status">{notice}</div>
+          {/if}
         </div>
       {/if}
     </div>

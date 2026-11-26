@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { usageSourceNote, type ProviderCatalogIndex } from './metrics';
+  import { type ProviderCatalogIndex, usageSourceNote } from './metrics';
   import QuotaMetric from './QuotaMetric.svelte';
   import StatusMetric from './StatusMetric.svelte';
+  import type { AppSettings, MetricLayout, ProviderSnapshot } from './types';
   import UsageMetric from './UsageMetric.svelte';
   import UsageTrend from './UsageTrend.svelte';
   import ValueMetric from './ValueMetric.svelte';
-  import type { AppSettings, MetricLayout, ProviderSnapshot } from './types';
 
   interface Props {
     layout: MetricLayout;

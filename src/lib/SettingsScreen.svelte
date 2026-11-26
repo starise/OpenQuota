@@ -125,16 +125,20 @@
 </script>
 
 <section class="screen settings-screen" aria-label="Settings">
-  {#if settingsView.integrationError}<p class="notice" role="alert">
+  {#if settingsView.integrationError}
+    <p class="notice" role="alert">
       {settingsView.integrationError}
-    </p>{/if}
+    </p>
+  {/if}
 
-  {#if settingsView.platformSummary}<div class="settings-section">
+  {#if settingsView.platformSummary}
+    <div class="settings-section">
       <h2>Linux</h2>
       <div class="setting-row">
         <span><b>Desktop Integration</b><small>{settingsView.platformSummary}</small></span>
       </div>
-    </div>{/if}
+    </div>
+  {/if}
 
   <div class="settings-section">
     <h2>General</h2>
@@ -143,14 +147,14 @@
         type="checkbox"
         checked={settings.showTotalSpend}
         onchange={(event) => patch({ showTotalSpend: event.currentTarget.checked })}
-      /></label
+      ></label
     >
     <label class="setting-row"
       ><span><b>Launch at Login</b></span><input
         type="checkbox"
         checked={settings.launchAtLogin}
         onchange={(event) => patch({ launchAtLogin: event.currentTarget.checked })}
-      /></label
+      ></label
     >
     <div class="setting-row">
       <span><b>Global Shortcut</b></span>
@@ -164,13 +168,17 @@
           onclick={() => (recording = !recording)}
           onkeydown={record}
           onblur={() => (recording = false)}
-          >{recording ? 'Type Shortcut…' : (settings.globalShortcut ?? 'Record Shortcut')}</button
-        >{#if settings.globalShortcut}<button
+        >
+          {recording ? 'Type Shortcut…' : (settings.globalShortcut ?? 'Record Shortcut')}
+        </button>{#if settings.globalShortcut}
+          <button
             type="button"
             aria-label="Clear global shortcut"
             onclick={() => patch({ globalShortcut: null })}
-            ><Icon name="close" size={10} strokeWidth={2.2} /></button
-          >{/if}
+          >
+            <Icon name="close" size={10} strokeWidth={2.2} />
+          </button>
+        {/if}
       </div>
       <small id="shortcut-recording-help" class="sr-only"
         >Activate to record. While recording, press a modifier shortcut to save it, Delete to clear
@@ -222,7 +230,7 @@
         type="checkbox"
         checked={settings.reduceAnimations}
         onchange={(event) => patch({ reduceAnimations: event.currentTarget.checked })}
-      /></label
+      ></label
     >
     {#if settingsView.trayAvailable}
       <div class="setting-row">
@@ -288,7 +296,8 @@
     </div>
     <label class="setting-row"
       ><span
-        ><b>Always Show Pacing</b><i
+        ><b>Always Show Pacing</b
+        ><i
           class="setting-info"
           data-tooltip="Show how you're pacing on every metric, not just ones near their limit"
           aria-label="Show how you're pacing on every metric, not just ones near their limit"
@@ -298,17 +307,21 @@
         type="checkbox"
         checked={settings.alwaysShowPacing}
         onchange={(event) => patch({ alwaysShowPacing: event.currentTarget.checked })}
-      /></label
+      ></label
     >
   </div>
 
   <div class="settings-section">
     <h2>
-      Notifications {#if notificationsNeedAttention}<span class="permission-warning">!</span>{/if}
+      Notifications
+      {#if notificationsNeedAttention}
+        <span class="permission-warning">!</span>
+      {/if}
     </h2>
     <label class="setting-row"
       ><span
-        ><b>Almost Out</b><i
+        ><b>Almost Out</b
+        ><i
           class="setting-info"
           data-tooltip="Alert when a limit drops below 10% remaining."
           aria-label="Alert when a limit drops below 10% remaining."
@@ -318,11 +331,12 @@
         type="checkbox"
         checked={settings.notifications.almostOut}
         onchange={(event) => patchNotification('almostOut', event.currentTarget.checked)}
-      /></label
+      ></label
     >
     <label class="setting-row"
       ><span
-        ><b>Cutting It Close</b><i
+        ><b>Cutting It Close</b
+        ><i
           class="setting-info"
           data-tooltip="Alert when a limit is projected to finish with little left."
           aria-label="Alert when a limit is projected to finish with little left."
@@ -332,11 +346,12 @@
         type="checkbox"
         checked={settings.notifications.cuttingItClose}
         onchange={(event) => patchNotification('cuttingItClose', event.currentTarget.checked)}
-      /></label
+      ></label
     >
     <label class="setting-row"
       ><span
-        ><b>Will Run Out</b><i
+        ><b>Will Run Out</b
+        ><i
           class="setting-info"
           data-tooltip="Alert when a limit is projected to finish before it resets."
           aria-label="Alert when a limit is projected to finish before it resets."
@@ -346,7 +361,7 @@
         type="checkbox"
         checked={settings.notifications.willRunOut}
         onchange={(event) => patchNotification('willRunOut', event.currentTarget.checked)}
-      /></label
+      ></label
     >
     {#if notificationsNeedAttention}
       <div class="notification-actions">
@@ -368,8 +383,9 @@
             onclick={settingsView.notificationPermission === 'denied'
               ? onOpenNotificationSettings
               : onRequestNotifications}
-            >{settingsView.notificationPermission === 'denied' ? 'Open Settings' : 'Allow'}</button
           >
+            {settingsView.notificationPermission === 'denied' ? 'Open Settings' : 'Allow'}
+          </button>
         </div>
       </div>
     {/if}
@@ -391,24 +407,28 @@
       />
     </div>
     <div class="setting-row setting-row--button">
-      <button class="secondary-button settings-wide-button" type="button" onclick={copyLogPath}
-        >Copy Log Path</button
-      >
+      <button class="secondary-button settings-wide-button" type="button" onclick={copyLogPath}>
+        Copy Log Path
+      </button>
     </div>
     <div class="setting-row setting-row--button">
-      <button class="secondary-button settings-wide-button" type="button" onclick={revealLogFile}
-        >{revealLogLabel}</button
-      >
+      <button class="secondary-button settings-wide-button" type="button" onclick={revealLogFile}>
+        {revealLogLabel}
+      </button>
     </div>
-    {#if logActionError}<p class="settings-note log-action-error" role="alert">
+    {#if logActionError}
+      <p class="settings-note log-action-error" role="alert">
         {logActionError}
-      </p>{/if}
+      </p>
+    {/if}
     <div class="setting-row setting-row--button">
       <button
         class="secondary-button settings-wide-button settings-reset-button"
         type="button"
-        onclick={onResetAllSettings}>Reset All Settings…</button
+        onclick={onResetAllSettings}
       >
+        Reset All Settings…
+      </button>
     </div>
   </div>
 
@@ -419,19 +439,23 @@
         type="checkbox"
         checked={settings.autoCheckUpdates}
         onchange={(event) => patch({ autoCheckUpdates: event.currentTarget.checked })}
-      /></label
+      ></label
     >
     <div class="setting-row setting-row--button">
       <button
         type="button"
         class="secondary-button settings-wide-button"
         disabled={checkingUpdate}
-        onclick={onCheckForUpdates}>{checkingUpdate ? 'Checking…' : 'Check for Updates…'}</button
+        onclick={onCheckForUpdates}
       >
+        {checkingUpdate ? 'Checking…' : 'Check for Updates…'}
+      </button>
     </div>
-    {#if updateError}<div class="settings-update-error" role="alert">
+    {#if updateError}
+      <div class="settings-update-error" role="alert">
         <b>{updateError.message}</b><small>{updateError.action}</small>
-      </div>{/if}
+      </div>
+    {/if}
   </div>
 
   <button class="screen-cross-link" type="button" aria-label="Customize" onclick={onCustomize}>

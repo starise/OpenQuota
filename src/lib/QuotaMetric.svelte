@@ -143,7 +143,8 @@
           class="metric-estimate"
           data-tooltip={estimateNote}
           aria-label="Estimated quota"
-          role="img"><Icon name="about" size={11} strokeWidth={1.9} /></span
+          role="img"
+          ><Icon name="about" size={11} strokeWidth={1.9} /></span
         >
       {/if}
     </h2>
@@ -156,10 +157,11 @@
             data-tooltip={paceDetail ?? undefined}
             aria-label={paceLabel}
             onclick={onToggleReset}
-            ><span class="pace-warning__icon"
-              ><Icon name="flame-filled" size={11} strokeWidth={1.8} /></span
-            >{paceLabel}</button
           >
+            <span class="pace-warning__icon"
+              ><Icon name="flame-filled" size={11} strokeWidth={1.8} /></span
+            >{paceLabel}
+          </button>
         {:else}
           <span
             class="pace-warning"

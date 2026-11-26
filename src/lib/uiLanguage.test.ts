@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import layoutCss from '../styles/layout.css?raw';
 import sharedComponentCss from '../styles/components.css?raw';
+import layoutCss from '../styles/layout.css?raw';
 import tokensCss from '../styles/tokens.css?raw';
 import customizeDetail from './CustomizeProviderDetail.svelte?raw';
 import customizeList from './CustomizeProviderList.svelte?raw';

@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
+  import { onMount, tick } from 'svelte';
   import {
     beginPanelResize,
     dismissMainWindow,
@@ -9,14 +9,16 @@
     getPanelHeightMode,
     getPanelResizeEdge,
     lockPanelResizeAxis,
-    onOpenScreen,
     onMainWindowHidden,
+    onOpenScreen,
     onSettingsState,
     onUpdateProgress,
     onUsageState,
     openProviderLink as openProviderLinkCommand,
-    openNotificationSettings as openSystemNotificationSettings,
     openLogFolder as openSystemLogFolder,
+    openNotificationSettings as openSystemNotificationSettings,
+    type PanelHeightMode,
+    type PanelResizeEdge,
     quitApplication,
     refreshProviderUsage,
     refreshUsage,
@@ -26,12 +28,10 @@
     resetProviderCustomization as resetProviderCustomizationCommand,
     setPanelHeightAutomatic,
     setPanelHeightManual,
-    type PanelHeightMode,
-    type PanelResizeEdge,
   } from './lib/backend';
+  import ConfirmationSheet from './lib/ConfirmationSheet.svelte';
   import CustomizeProviderDetail from './lib/CustomizeProviderDetail.svelte';
   import CustomizeProviderList from './lib/CustomizeProviderList.svelte';
-  import ConfirmationSheet from './lib/ConfirmationSheet.svelte';
   import { restoreCustomization } from './lib/customizationHistory';
   import Dashboard from './lib/Dashboard.svelte';
   import Icon from './lib/Icon.svelte';
@@ -43,19 +43,19 @@
   import { desktopPlatform, shortcutLabels } from './lib/platform';
   import { withProviderName } from './lib/providerNames';
   import RenameProviderSheet from './lib/RenameProviderSheet.svelte';
+  import SettingsScreen from './lib/SettingsScreen.svelte';
+  import { SettingsController } from './lib/settingsController.svelte';
   import {
     buildProviderShareRows,
     renderProviderShareCard,
     renderTotalSpendShareCard,
   } from './lib/shareCard';
-  import SettingsScreen from './lib/SettingsScreen.svelte';
-  import { SettingsController } from './lib/settingsController.svelte';
   import Tooltip from './lib/Tooltip.svelte';
   import type { SpendProjection } from './lib/totalSpend';
   import type { AppSettings, UsageViewState } from './lib/types';
   import { nextUpdateLabel, UpdateController } from './lib/updateController.svelte';
   import { automaticUpdateDelay, UPDATE_CHECK_INTERVAL_MS } from './lib/updateSchedule';
-  import { createWindowController, type AppScreen } from './lib/windowController';
+  import { type AppScreen, createWindowController } from './lib/windowController';
 
   type Screen = AppScreen;
   const appVersion = import.meta.env.APP_VERSION;
@@ -770,7 +770,7 @@
   });
 </script>
 
-<svelte:head><meta name="color-scheme" content="light dark" /></svelte:head>
+<svelte:head><meta name="color-scheme" content="light dark"></svelte:head>
 <svelte:window onpointerdown={handleWindowPointerDown} />
 
 <main
@@ -827,8 +827,9 @@
             type="button"
             onclick={requestCustomizationReset}
             aria-label="Reset all customization"
-            ><Icon name="reset" size={15} strokeWidth={2} /></button
           >
+            <Icon name="reset" size={15} strokeWidth={2} />
+          </button>
         {:else if screen.startsWith('provider:')}
           <button
             class="text-button"
@@ -836,17 +837,20 @@
             disabled={resettingProviderId !== null}
             onclick={() => resetProviderCustomization(screen.slice(9))}
             aria-label={`Reset ${topBarTitle()}`}
-            ><Icon name="reset" size={15} strokeWidth={2} /></button
           >
+            <Icon name="reset" size={15} strokeWidth={2} />
+          </button>
         {:else}
           <span></span>
         {/if}
       </header>
     {/if}
     <div class="content" class:content--chrome={screen !== 'dashboard'}>
-      {#if settingsError}<div class="notice notice--blocking" role="alert">
+      {#if settingsError}
+        <div class="notice notice--blocking" role="alert">
           {settingsError}
-        </div>{/if}
+        </div>
+      {/if}
       <div class="screen-stage">
         {#key screen}
           <div
@@ -943,9 +947,8 @@
           disabled={anyRefreshing}
           aria-label="Refresh all provider usage"
         >
-          <span>OpenQuota {appVersion}</span><small
-            >{anyRefreshing ? 'Updating…' : nextUpdateLabel(lastFullRefresh, now)}</small
-          >
+          <span>OpenQuota {appVersion}</span
+          ><small>{anyRefreshing ? 'Updating…' : nextUpdateLabel(lastFullRefresh, now)}</small>
         </button>
         {#if screen === 'dashboard'}
           <div class="footer-actions">
@@ -964,13 +967,9 @@
               </button>
             {/if}
             <details class="options-menu" bind:this={optionsMenuElement}>
-              <summary aria-label="Open options" onkeydown={handleOptionsKey}
-                ><span>Options</span><Icon
-                  name="chevron-down"
-                  size={11}
-                  strokeWidth={2.2}
-                /></summary
-              >
+              <summary aria-label="Open options" onkeydown={handleOptionsKey}>
+                <span>Options</span><Icon name="chevron-down" size={11} strokeWidth={2.2} />
+              </summary>
               <div
                 class="options-menu__panel"
                 role="menu"
@@ -988,51 +987,54 @@
                   type="button"
                   aria-label="Customize"
                   onclick={() => navigate('customize')}
-                  ><Icon name="sliders" /><span>Customize</span><kbd>↩</kbd></button
                 >
+                  <Icon name="sliders" /><span>Customize</span><kbd>↩</kbd>
+                </button>
                 <button
                   class="menu-item"
                   type="button"
                   aria-label="Settings"
                   onclick={() => navigate('settings')}
-                  ><Icon name="gear" /><span>Settings</span><kbd>{shortcuts.settings}</kbd></button
                 >
-                <hr />
+                  <Icon name="gear" /><span>Settings</span><kbd>{shortcuts.settings}</kbd>
+                </button>
+                <hr>
                 <details
                   bind:this={shareMenuElement}
                   class="share-menu"
                   ontoggle={(event) => (shareMenuOpen = event.currentTarget.open)}
                 >
-                  <summary
-                    ><span class="share-menu__direction"
-                      ><Icon name="chevron-left" size={12} /></span
-                    ><span>Share Screenshot</span></summary
-                  >
+                  <summary>
+                    <span class="share-menu__direction"><Icon name="chevron-left" size={12} /></span
+                    ><span>Share Screenshot</span>
+                  </summary>
                   <div>
                     {#if shareMenuOpen}
-                      {#each settingsState.settings.providers.filter((provider) => provider.enabled && catalog.provider(provider.id)) as provider (provider.id)}
-                        <button type="button" onclick={() => shareProvider(provider.id)}
-                          >{providerDisplayName(provider.id)}</button
-                        >
+                      {#each settingsState.settings.providers.filter(
+                        (provider) => provider.enabled && catalog.provider(provider.id),
+                      ) as provider (provider.id)}
+                        <button type="button" onclick={() => shareProvider(provider.id)}>
+                          {providerDisplayName(provider.id)}
+                        </button>
                       {/each}
                     {/if}
                   </div>
                 </details>
-                <button class="menu-item" type="button" onclick={() => void checkForUpdates(true)}
-                  ><Icon name="refresh" /><span>Check for Updates…</span></button
-                >
-                <hr />
-                <button class="menu-item" type="button" onclick={openAbout}
-                  ><Icon name="about" /><span>About OpenQuota</span></button
-                >
+                <button class="menu-item" type="button" onclick={() => void checkForUpdates(true)}>
+                  <Icon name="refresh" /><span>Check for Updates…</span>
+                </button>
+                <hr>
+                <button class="menu-item" type="button" onclick={openAbout}>
+                  <Icon name="about" /><span>About OpenQuota</span>
+                </button>
                 <button
                   class="menu-item menu-item--danger"
                   type="button"
                   aria-label="Quit OpenQuota"
                   onclick={quitApp}
-                  ><Icon name="power" /><span>Quit OpenQuota</span><kbd>{shortcuts.quit}</kbd
-                  ></button
                 >
+                  <Icon name="power" /><span>Quit OpenQuota</span><kbd>{shortcuts.quit}</kbd>
+                </button>
               </div>
             </details>
           </div>
@@ -1096,8 +1098,9 @@
             type="button"
             aria-label="Close About"
             onclick={() => void closeAbout()}
-            ><Icon name="close" size={11} strokeWidth={2.3} /></button
           >
+            <Icon name="close" size={11} strokeWidth={2.3} />
+          </button>
           <OpenQuotaMark size={44} />
           <h1>OpenQuota</h1>
           <p>Version {appVersion}</p>
@@ -1610,7 +1613,7 @@
     .options-menu kbd {
       color: var(--tertiary);
       background: none;
-      font: 10px/1 inherit;
+      font: 10px / 1 inherit;
     }
 
     .options-menu .menu-item--danger {

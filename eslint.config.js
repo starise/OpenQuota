@@ -1,6 +1,6 @@
 import js from '@eslint/js';
-import globals from 'globals';
 import svelte from 'eslint-plugin-svelte';
+import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default [

@@ -54,7 +54,7 @@
           cancel(event.currentTarget);
         }
       }}
-    />
+    >
   </div>
 </section>
 
