@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { required } from '../test/required';
 import { ringSectorPath, type SpendRingGeometry, spendRingArcs } from './spendRing';
 
 const geometry: SpendRingGeometry = {
@@ -18,7 +19,7 @@ describe('Total Spend ring sectors', () => {
       { id: 'opencode', value: 0 },
     ]);
 
-    const grok = arcs.find((arc) => arc.id === 'grok')!;
+    const grok = required(arcs.find((arc) => arc.id === 'grok'));
     expect(arcs[0].start).toBe(0);
     expect(arcs.at(-1)?.end).toBeCloseTo(1, 10);
     expect(arcs.map(({ id }) => id)).toEqual(['cursor', 'claude', 'codex', 'grok']);

@@ -1,5 +1,6 @@
 import { fireEvent, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { required } from '../test/required';
 import { pointerReorder, type ReorderFrame, reorderTargetAt } from './pointerReorder';
 
 afterEach(() => {
@@ -190,6 +191,7 @@ describe('pointer reorder interaction', () => {
     const { source, header } = reorderFixture();
     const previewButton = document.createElement('button');
     previewButton.autofocus = true;
+    source.style.transition = 'left 100ms';
     source.append(previewButton);
     const action = pointerReorder(source, {
       id: 'first',
@@ -210,8 +212,10 @@ describe('pointer reorder interaction', () => {
       clientX: window.innerWidth + 500,
       clientY: window.innerHeight + 500,
     });
-    const lift = document.querySelector<HTMLElement>('.pointer-reorder-lift')!;
+    const lift = required(document.querySelector<HTMLElement>('.pointer-reorder-lift'));
     expect(lift.parentElement).toHaveClass('pointer-reorder-layer');
+    expect(lift.style.transition).toBe('none');
+    expect(source.style.transition).toBe('left 100ms');
     expect(lift).not.toHaveAttribute('inert');
     expect(lift.querySelector('button')).toHaveAttribute('tabindex', '-1');
     expect(lift.querySelector('button')).not.toHaveAttribute('autofocus');

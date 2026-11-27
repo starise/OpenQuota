@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { required } from '../test/required';
 import { SettingsController } from './settingsController.svelte';
 import type { AppSettings, SettingsViewState } from './types';
 
@@ -189,7 +190,7 @@ describe('SettingsController', () => {
     expect(controller.state?.settings.theme).toBe('light');
     expect(mocks.getAppSettings).not.toHaveBeenCalled();
 
-    const save = controller.save(controller.state!.settings);
+    const save = controller.save(required(controller.state).settings);
     controller.endDraft();
     await vi.waitFor(() => expect(mocks.saveAppSettings).toHaveBeenCalledTimes(1));
     finishSave?.(settingsView('light', 1));

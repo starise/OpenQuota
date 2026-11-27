@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { providerCatalogIndex } from '../test/appFixtures';
+import { required } from '../test/required';
 import CustomizeProviderDetail from './CustomizeProviderDetail.svelte';
 import CustomizeProviderList from './CustomizeProviderList.svelte';
 import type { AppSettings } from './types';
@@ -143,9 +144,11 @@ describe('pointer reorder integrations', () => {
   it('keeps dashboard visibility and menu bar stars independent', async () => {
     const onChange = vi.fn();
     const independent = structuredClone(settings);
-    const metrics = independent.providers.find((provider) => provider.id === 'codex')!.metrics;
-    metrics.find((metric) => metric.id === 'codex.weekly')!.pinned = false;
-    const today = metrics.find((metric) => metric.id === 'codex.today')!;
+    const metrics = required(
+      independent.providers.find((provider) => provider.id === 'codex'),
+    ).metrics;
+    required(metrics.find((metric) => metric.id === 'codex.weekly')).pinned = false;
+    const today = required(metrics.find((metric) => metric.id === 'codex.today'));
     today.enabled = false;
 
     const { rerender } = render(CustomizeProviderDetail, {
@@ -161,20 +164,24 @@ describe('pointer reorder integrations', () => {
     });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Pin Today' }));
-    const starred = onChange.mock.calls.at(-1)![0] as AppSettings;
-    const starredToday = starred.providers
-      .find((provider) => provider.id === 'codex')!
-      .metrics.find((metric) => metric.id === 'codex.today')!;
+    const starred = required(onChange.mock.calls.at(-1))[0] as AppSettings;
+    const starredToday = required(
+      required(starred.providers.find((provider) => provider.id === 'codex')).metrics.find(
+        (metric) => metric.id === 'codex.today',
+      ),
+    );
     expect(starredToday).toMatchObject({ enabled: false, pinned: true });
     expect(screen.getByRole('status')).toHaveTextContent('Starred for menu bar');
 
     onChange.mockClear();
     await rerender({ settings: starred });
     await fireEvent.click(screen.getByRole('checkbox', { name: 'Show Session' }));
-    const hidden = onChange.mock.calls.at(-1)![0] as AppSettings;
-    const hiddenSession = hidden.providers
-      .find((provider) => provider.id === 'codex')!
-      .metrics.find((metric) => metric.id === 'codex.session')!;
+    const hidden = required(onChange.mock.calls.at(-1))[0] as AppSettings;
+    const hiddenSession = required(
+      required(hidden.providers.find((provider) => provider.id === 'codex')).metrics.find(
+        (metric) => metric.id === 'codex.session',
+      ),
+    );
     expect(hiddenSession).toMatchObject({ enabled: false, pinned: true });
   });
 
@@ -218,9 +225,9 @@ describe('pointer reorder integrations', () => {
     });
 
     const rows = screen.getAllByRole('listitem');
-    const codex = rows.find((row) => row.textContent?.includes('Codex'))!;
-    const claude = rows.find((row) => row.textContent?.includes('Claude'))!;
-    await drag(codex, codex.querySelector('[data-reorder-handle]')!, claude);
+    const codex = required(rows.find((row) => row.textContent?.includes('Codex')));
+    const claude = required(rows.find((row) => row.textContent?.includes('Claude')));
+    await drag(codex, required(codex.querySelector('[data-reorder-handle]')), claude);
 
     expect(onReorderStart).toHaveBeenCalledOnce();
     expect(onReorderEnd).toHaveBeenCalledWith(true, false);
@@ -271,10 +278,10 @@ describe('pointer reorder integrations', () => {
 
     const weekly = screen.getByText('Weekly').closest('.customize-metric-row') as HTMLElement;
     const today = screen.getByText('Today').closest('.customize-metric-row') as HTMLElement;
-    await drag(weekly, weekly.querySelector('[data-reorder-handle]')!, today, 'touch');
+    await drag(weekly, required(weekly.querySelector('[data-reorder-handle]')), today, 'touch');
 
     const changed = onChange.mock.calls[0][0] as AppSettings;
-    const metrics = changed.providers.find((provider) => provider.id === 'codex')!.metrics;
+    const metrics = required(changed.providers.find((provider) => provider.id === 'codex')).metrics;
     expect(metrics.find((metric) => metric.id === 'codex.weekly')?.section).toBe('onDemand');
     expect(metrics.map((metric) => metric.id)).toEqual([
       'codex.session',

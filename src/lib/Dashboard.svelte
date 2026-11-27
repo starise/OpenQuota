@@ -432,6 +432,7 @@
     class:provider-reorder-shell--content-morph={demandMorphing}
     animate:flip={reorderFlip(reducedMotion || demandMorphing)}
   >
+    <!-- biome-ignore lint/a11y/useSemanticElements: Names a provider card with mixed content and controls. -->
     <section
       class="provider-section"
       data-provider-id={provider.id}
@@ -452,12 +453,14 @@
       }}
       oncontextmenu={(event) => openProviderMenu(event, provider.id)}
     >
-      <header
+      <!-- biome-ignore lint/a11y/useSemanticElements: Names the pointer drag region within the provider card. -->
+      <div
         class="provider-header"
         data-reorder-handle
         role="group"
         aria-label={`Drag ${providerDisplayName(provider.id)} to reorder`}
       >
+        <!-- biome-ignore lint/a11y/useSemanticElements: This handle is operated by drag or Alt+Arrow, with no button activation action. -->
         <span
           class="drag-grip"
           data-reorder-handle
@@ -483,7 +486,7 @@
           class:active={Boolean(state?.refreshing || state?.error || snapshot.warnings.length > 0)}
         >
           {#if state?.refreshing}
-            <span class="provider-refreshing" aria-label="Refreshing"
+            <span class="provider-refreshing" role="img" aria-label="Refreshing"
               ><Icon name="refresh" size={12} strokeWidth={2} /></span
             >
           {:else if state?.error}
@@ -508,7 +511,7 @@
           {/if}
         </span>
         <span class="provider-mark"><ProviderIcon providerId={provider.id} size={17} /></span>
-      </header>
+      </div>
       <section
         class="provider-card"
         aria-label={`${providerDisplayName(provider.id)} usage`}
@@ -548,6 +551,7 @@
           </div>
         {/if}
         {#each alwaysMetrics as metric (metric.id)}
+          <!-- biome-ignore lint/a11y/useSemanticElements: Names the draggable metric and its context menu target. -->
           <div
             class="metric-context-target"
             class:metric-context-target--content-morph={demandMorphing}
@@ -607,6 +611,7 @@
           {#if provider.expanded}
             <div class="demand-metrics" transition:slide={springMotion(reducedMotion)}>
               {#each demandMetrics as metric (metric.id)}
+                <!-- biome-ignore lint/a11y/useSemanticElements: Names the draggable metric and its context menu target. -->
                 <div
                   class="metric-context-target"
                   class:metric-context-target--content-morph={demandMorphing}
@@ -824,10 +829,6 @@
       opacity: 1;
     }
 
-    .provider-header .provider-mark {
-      margin-left: 0;
-    }
-
     .provider-warning,
     .provider-refreshing {
       display: grid;
@@ -908,10 +909,6 @@
       cursor: pointer;
     }
 
-    .provider-error-row button:hover {
-      background: var(--button-hover);
-    }
-
     .demand-divider {
       display: grid;
       width: 100%;
@@ -928,11 +925,9 @@
       overflow: hidden;
     }
 
-    .provider-reorder-shell--content-morph {
-      transform: none !important;
-    }
-
+    .provider-reorder-shell--content-morph,
     .metric-context-target--content-morph {
+      /* biome-ignore lint/complexity/noImportantStyles: Overrides the inline FLIP transform while the card changes height. */
       transform: none !important;
     }
 
@@ -1034,15 +1029,6 @@
       background: transparent;
       cursor: pointer;
       place-items: center;
-    }
-
-    .hint-card__dismiss:hover,
-    .hint-card__dismiss:focus-visible,
-    .detection-card .dismiss:hover,
-    .detection-card .dismiss:focus-visible {
-      outline: none;
-      color: var(--text);
-      background: var(--button-hover);
     }
 
     .update-notes {
@@ -1241,6 +1227,10 @@
       background: transparent;
     }
 
+    .provider-header .provider-mark {
+      margin-left: 0;
+    }
+
     .metric-context-target {
       position: relative;
       cursor: grab;
@@ -1309,14 +1299,27 @@
       color: var(--meter-critical);
     }
 
+    .context-menu button:disabled {
+      opacity: 0.45;
+    }
+
+    .provider-error-row button:hover {
+      background: var(--button-hover);
+    }
+
+    .hint-card__dismiss:hover,
+    .hint-card__dismiss:focus-visible,
+    .detection-card .dismiss:hover,
+    .detection-card .dismiss:focus-visible {
+      outline: none;
+      color: var(--text);
+      background: var(--button-hover);
+    }
+
     .context-menu button:not(:disabled):hover,
     .context-menu button:not(:disabled):focus-visible {
       outline: none;
       background: var(--button-hover);
-    }
-
-    .context-menu button:disabled {
-      opacity: 0.45;
     }
 
     @keyframes spin {

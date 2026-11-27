@@ -127,26 +127,26 @@
     {/if}
     {#each ['alwaysVisible', 'onDemand'] as section (section)}
       {@const sectionMetrics = provider.metrics.filter((metric) => metric.section === section)}
+      <!-- biome-ignore lint/a11y/useSemanticElements: The group names a list of draggable metrics rather than a set of form fields. -->
       <div
         class="metric-section"
         role="group"
         aria-label={section === 'alwaysVisible' ? 'Always Visible metrics' : 'On Demand metrics'}
       >
         <h2>{section === 'alwaysVisible' ? 'Always Visible' : 'On Demand'}</h2>
-        <div class="metric-list" role="list">
+        <!-- biome-ignore lint/a11y/noRedundantRoles: WebKit drops list semantics when list-style is none. -->
+        <ul class="metric-list" role="list">
           {#if sectionMetrics.length === 0}
-            <div
+            <li
               class="empty-drop-zone"
-              role="listitem"
               data-reorder-group={`customize-metrics:${provider.id}`}
               data-reorder-id={`section:${section}`}
             >
               Drag metrics here
-            </div>
+            </li>
           {/if}
           {#each sectionMetrics as metric (metric.id)}
-            <div
-              role="listitem"
+            <li
               class:disabled={!metric.enabled}
               class="customize-metric-row"
               data-reorder-group={`customize-metrics:${provider.id}`}
@@ -170,6 +170,7 @@
               }}
               animate:flip={reorderFlip(reducedMotion)}
             >
+              <!-- biome-ignore lint/a11y/useSemanticElements: This handle is operated by drag or Alt+Arrow, with no button activation action. -->
               <span
                 class="reorder-grip"
                 data-reorder-handle
@@ -213,9 +214,9 @@
                     })}
                 ><span></span></label
               >
-            </div>
+            </li>
           {/each}
-        </div>
+        </ul>
       </div>
     {/each}
     <ProviderApiKeySection

@@ -21,7 +21,7 @@ export function createListenerRegistry(onError: () => void) {
   function dispose() {
     if (disposed) return;
     disposed = true;
-    listeners.forEach((stop) => stop());
+    for (const stop of listeners) stop();
     listeners.clear();
   }
 

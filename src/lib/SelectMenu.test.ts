@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { required } from '../test/required';
 import SelectMenu from './SelectMenu.svelte';
 
 const options = [
@@ -35,9 +36,9 @@ describe('SelectMenu', () => {
 
     await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
     expect(screen.getByRole('option', { name: 'Cost' })).toHaveFocus();
-    await fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+    await fireEvent.keyDown(required(document.activeElement), { key: 'ArrowDown' });
     expect(screen.getByRole('option', { name: 'Tokens' })).toHaveFocus();
-    await fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    await fireEvent.keyDown(required(document.activeElement), { key: 'Escape' });
     expect(trigger).toHaveFocus();
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
   });

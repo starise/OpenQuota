@@ -67,6 +67,7 @@
 <section class="trend-row" aria-label="Usage Trend">
   <strong>Usage Trend</strong>
   {#if total > 0}
+    <!-- biome-ignore lint/a11y/useSemanticElements: Names the chart and its hover detail as a group. -->
     <div
       class="trend-chart-wrap"
       role="group"
@@ -103,6 +104,7 @@
             onmouseleave={() => (hoveredDate = null)}
           >
             {#each points as point (point.date)}
+              <!-- biome-ignore lint/a11y/noStaticElementInteractions: Decorative bars update the hover readout. The chart exposes its summary separately. -->
               <i
                 role="presentation"
                 class:muted={hoveredDate !== null && hoveredDate !== point.date}
@@ -180,15 +182,6 @@
         transform var(--motion-switch);
     }
 
-    .trend-bars:hover span {
-      opacity: 0.55;
-    }
-
-    .trend-bars span:hover {
-      opacity: 1;
-      transform: scaleX(1.35);
-    }
-
     .trend-bars--active {
       background: var(--button-hover);
       box-shadow: 0 0 0 4px var(--button-hover);
@@ -230,6 +223,15 @@
       font-size: 11px;
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
+    }
+
+    .trend-bars:hover span {
+      opacity: 0.55;
+    }
+
+    .trend-bars span:hover {
+      opacity: 1;
+      transform: scaleX(1.35);
     }
 
     .trend-detail__bars {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { codexState, providerCatalog } from '../test/appFixtures';
+import { required } from '../test/required';
 import { ProviderCatalogIndex, usageSourceNote } from './metrics';
 
 describe('provider catalog index', () => {
@@ -39,16 +40,16 @@ describe('provider catalog index', () => {
 
   it('prefers the snapshot usage source when an additional local source contributed', () => {
     const catalog = new ProviderCatalogIndex(providerCatalog);
-    const snapshot = structuredClone(codexState.snapshot!);
-    snapshot.usage.last30Days!.modelBreakdown = {
+    const snapshot = structuredClone(required(codexState.snapshot));
+    required(snapshot.usage.last30Days).modelBreakdown = {
       models: [],
       sourceNote: 'From your Codex logs and pi (estimated)',
     };
 
     expect(usageSourceNote(catalog, snapshot)).toBe('From your Codex logs and pi (estimated)');
-    snapshot.usage.last30Days!.modelBreakdown = null;
-    snapshot.usage.today!.modelBreakdown = null;
-    snapshot.usage.yesterday!.modelBreakdown = null;
+    required(snapshot.usage.last30Days).modelBreakdown = null;
+    required(snapshot.usage.today).modelBreakdown = null;
+    required(snapshot.usage.yesterday).modelBreakdown = null;
     expect(usageSourceNote(catalog, snapshot)).toBe('From your Codex logs (estimated)');
   });
 

@@ -12,7 +12,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.app.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "biome ci --linter-enabled=false . && eslint \"src/**/*.svelte\" \"src/**/*.svelte.ts\"",
+    "lint": "biome ci . && eslint \"src/**/*.svelte\" \"src/**/*.svelte.ts\"",
     "format": "biome check --write --linter-enabled=false .",
     "verify:versions": "node scripts/verify/verify-versions.js",
     "verify:contracts": "node scripts/verify/verify-command-contract.js && node scripts/verify/verify-model-contract.js && node scripts/verify/verify-provider-registry-contract.js && node scripts/verify/verify-single-instance-contract.js && node scripts/verify/verify-release-policy.js",

@@ -299,6 +299,7 @@
         ><b>Always Show Pacing</b
         ><i
           class="setting-info"
+          role="img"
           data-tooltip="Show how you're pacing on every metric, not just ones near their limit"
           aria-label="Show how you're pacing on every metric, not just ones near their limit"
           ><Icon name="about" size={12} strokeWidth={1.8} /></i
@@ -323,6 +324,7 @@
         ><b>Almost Out</b
         ><i
           class="setting-info"
+          role="img"
           data-tooltip="Alert when a limit drops below 10% remaining."
           aria-label="Alert when a limit drops below 10% remaining."
           ><Icon name="about" size={12} strokeWidth={1.8} /></i
@@ -338,6 +340,7 @@
         ><b>Cutting It Close</b
         ><i
           class="setting-info"
+          role="img"
           data-tooltip="Alert when a limit is projected to finish with little left."
           aria-label="Alert when a limit is projected to finish with little left."
           ><Icon name="about" size={12} strokeWidth={1.8} /></i
@@ -353,6 +356,7 @@
         ><b>Will Run Out</b
         ><i
           class="setting-info"
+          role="img"
           data-tooltip="Alert when a limit is projected to finish before it resets."
           aria-label="Alert when a limit is projected to finish before it resets."
           ><Icon name="about" size={12} strokeWidth={1.8} /></i
@@ -482,10 +486,6 @@
       font-size: 11px;
     }
 
-    .settings-section h2 + .setting-row {
-      border-top: 0;
-    }
-
     .setting-row > span {
       display: flex;
       min-width: 0;
@@ -507,11 +507,6 @@
       width: 15px;
       height: 15px;
       accent-color: var(--meter-fill);
-    }
-
-    input[type='checkbox']:focus-visible {
-      outline: 2px solid var(--meter-fill);
-      outline-offset: 2px;
     }
 
     .settings-reset-button {
@@ -607,24 +602,6 @@
       background: transparent;
     }
 
-    .settings-section > .setting-row {
-      border-top: 0;
-      background: var(--card);
-    }
-
-    .settings-section > h2 + .setting-row {
-      border-radius: 12px 12px 0 0;
-    }
-
-    .settings-section > .setting-row:last-child,
-    .settings-section > .settings-note:last-child {
-      border-radius: 0 0 12px 12px;
-    }
-
-    .settings-section > h2 + .setting-row:last-child {
-      border-radius: 12px;
-    }
-
     .setting-row {
       min-height: 40px;
       padding: 9px 12px;
@@ -657,6 +634,11 @@
       transition: background-color 160ms ease;
     }
 
+    input[type='checkbox']:focus-visible {
+      outline: 2px solid var(--meter-fill);
+      outline-offset: 2px;
+    }
+
     input[type='checkbox']::after {
       display: block;
       width: 12px;
@@ -679,12 +661,6 @@
 
     .version-row {
       font-size: 10px;
-    }
-
-    .setting-row > span:has(.setting-info) {
-      align-items: center;
-      flex-direction: row;
-      gap: 6px;
     }
 
     .setting-info {
@@ -731,6 +707,12 @@
       gap: 2px;
     }
 
+    .setting-row > span:has(.setting-info) {
+      align-items: center;
+      flex-direction: row;
+      gap: 6px;
+    }
+
     .notification-attention b {
       font-size: 11px;
       font-weight: 600;
@@ -769,10 +751,32 @@
       line-height: 12px;
     }
 
+    .settings-section > .setting-row {
+      border-top: 0;
+      background: var(--card);
+    }
+
+    .settings-section > h2 + .setting-row {
+      border-radius: 12px 12px 0 0;
+    }
+
+    .settings-section h2 + .setting-row {
+      border-top: 0;
+    }
+
     :root[data-density='compact'] .setting-row {
       gap: 8px;
       padding-right: 10px;
       padding-left: 10px;
+    }
+
+    .settings-section > .setting-row:last-child,
+    .settings-section > .settings-note:last-child {
+      border-radius: 0 0 12px 12px;
+    }
+
+    .settings-section > h2 + .setting-row:last-child {
+      border-radius: 12px;
     }
 
     :root[data-density='compact'] .screen-cross-link {

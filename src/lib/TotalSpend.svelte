@@ -115,7 +115,8 @@
     </button>
   </div>
   <div class="total-card">
-    <div class="period-switcher" aria-label="Total Spend period">
+    <!-- biome-ignore lint/a11y/useSemanticElements: Names the related period selection buttons. -->
+    <div class="period-switcher" role="group" aria-label="Total Spend period">
       <span
         class="period-switcher__selection"
         style={`transform: translateX(${periodIndex * 100}%)`}

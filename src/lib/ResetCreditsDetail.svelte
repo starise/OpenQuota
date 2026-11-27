@@ -162,6 +162,7 @@
             </div>
             <div class="reset-entry-content">
               {#if confirmingExpiry === entry.expiry}
+                <!-- biome-ignore lint/a11y/useSemanticElements: Groups the controls of an inline reset confirmation. -->
                 <div
                   class="reset-confirm"
                   role="group"
@@ -339,16 +340,6 @@
       opacity: 0;
     }
 
-    .reset-entry:hover .reset-use,
-    .reset-entry:focus-within .reset-use {
-      opacity: 1;
-    }
-
-    .reset-use:disabled,
-    .reset-confirm button:disabled {
-      opacity: 0.55;
-    }
-
     .reset-confirm {
       display: grid;
       gap: 8px;
@@ -378,6 +369,16 @@
       color: white;
       background: var(--meter-fill);
       font-weight: 600;
+    }
+
+    .reset-use:disabled,
+    .reset-confirm button:disabled {
+      opacity: 0.55;
+    }
+
+    .reset-entry:hover .reset-use,
+    .reset-entry:focus-within .reset-use {
+      opacity: 1;
     }
 
     .reset-rail {

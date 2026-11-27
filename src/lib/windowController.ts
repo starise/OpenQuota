@@ -65,10 +65,10 @@ export function createWindowController(options: WindowControllerOptions) {
       return;
     }
     window.cancelAnimationFrame(measureFrame);
-    measureFrame = window.requestAnimationFrame(() => void fit());
+    measureFrame = window.requestAnimationFrame(() => void fitWindowHeight());
   }
 
-  async function fit() {
+  async function fitWindowHeight() {
     if (shouldDefer()) return;
     const screen = options.screen();
     const page = document.querySelector<HTMLElement>(`.screen-page[data-screen="${screen}"]`);

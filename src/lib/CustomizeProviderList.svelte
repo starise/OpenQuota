@@ -50,12 +50,12 @@
 </script>
 
 <section class="screen customize-screen" aria-label="Customize">
-  <div class="customize-list" role="list">
+  <!-- biome-ignore lint/a11y/noRedundantRoles: WebKit drops list semantics when list-style is none. -->
+  <ul class="customize-list" role="list">
     {#each settings.providers.filter((provider) =>
       catalog.provider(provider.id),
     ) as provider (provider.id)}
-      <div
-        role="listitem"
+      <li
         class:inactive={!provider.enabled}
         class="provider-list-row"
         data-reorder-group={provider.enabled ? 'customize-providers' : undefined}
@@ -73,6 +73,7 @@
         }}
         animate:flip={reorderFlip(reducedMotion)}
       >
+        <!-- biome-ignore lint/a11y/useSemanticElements: This handle is operated by drag or Alt+Arrow, with no button activation action. -->
         <span
           class="reorder-grip"
           data-reorder-handle
@@ -107,9 +108,9 @@
         >
           <Icon name="chevron-right" size={13} strokeWidth={2.2} />
         </button>
-      </div>
+      </li>
     {/each}
-  </div>
+  </ul>
   <button class="screen-cross-link" type="button" aria-label="Settings" onclick={onSettings}>
     <Icon name="gear" size={17} />
     <span><b>Settings</b><small>Notifications, appearance and more</small></span>
@@ -126,10 +127,6 @@
       gap: 5px;
       padding: 5px 7px;
       border-top: 1px solid var(--separator);
-    }
-
-    .provider-list-row:first-child {
-      border-top: 0;
     }
 
     .provider-list-row.inactive {
@@ -209,6 +206,9 @@
 
     .chevron {
       font-size: 18px;
+    }
+    .provider-list-row:first-child {
+      border-top: 0;
     }
   }
 </style>

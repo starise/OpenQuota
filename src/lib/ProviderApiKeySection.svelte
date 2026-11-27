@@ -222,6 +222,7 @@
                 >
               </div>
               {#if confirmingRemoval}
+                <!-- biome-ignore lint/a11y/useSemanticElements: Groups the controls of an inline confirmation inside the API key form. -->
                 <div
                   id={`remove-api-key-${providerId}`}
                   class="api-key-remove-confirm"

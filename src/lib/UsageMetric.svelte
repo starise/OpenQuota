@@ -92,6 +92,7 @@
     >{label}{#if period?.unknownModels?.length}
       <i
         class="usage-label-warning"
+        role="img"
         data-tooltip-align="left"
         data-tooltip={unknownModelTooltip(
           period.unknownModels,

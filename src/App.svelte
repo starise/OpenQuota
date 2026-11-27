@@ -409,17 +409,19 @@
       settingsResetConfirmationOpen = false;
     }
   }
-  async function copyCanvas(canvas: HTMLCanvasElement, fallback: string) {
-    const blob = await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob(
-        (value) => (value ? resolve(value) : reject(new Error('PNG unavailable'))),
-        'image/png',
-      ),
-    );
+  async function copyCanvas(canvas: HTMLCanvasElement, card: HTMLElement, title?: string) {
     if (typeof ClipboardItem !== 'undefined' && navigator.clipboard.write) {
+      const blob = await new Promise<Blob>((resolve, reject) =>
+        canvas.toBlob(
+          (value) => (value ? resolve(value) : reject(new Error('PNG unavailable'))),
+          'image/png',
+        ),
+      );
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
     } else {
-      await navigator.clipboard.writeText(fallback);
+      // biome-ignore lint/performance/useDomNodeTextContent: The text fallback keeps the card's visible lines.
+      const text = card.innerText.trim();
+      await navigator.clipboard.writeText(title ? [title, text].join('\n') : text);
     }
     showConfirmation('Copied to clipboard');
   }
@@ -431,7 +433,6 @@
     const provider = viewState.providers[providerId]?.snapshot;
     const layout = current.settings.providers.find((item) => item.id === providerId);
     if (!provider || !layout) return;
-    const snapshot = [providerDisplayName(providerId), card.innerText.trim()].join('\n');
     try {
       const rows = buildProviderShareRows(catalog, provider, layout, current.settings, now);
       const canvas = renderProviderShareCard(catalog, {
@@ -440,7 +441,7 @@
         plan: provider.plan,
         rows,
       });
-      await copyCanvas(canvas, snapshot);
+      await copyCanvas(canvas, card, providerDisplayName(providerId));
     } catch {
       settingsError = 'Provider screenshot could not be copied.';
     }
@@ -457,7 +458,7 @@
         metric: current.settings.totalSpendMetric,
         period: current.settings.totalSpendPeriod,
       });
-      await copyCanvas(canvas, card.innerText.trim());
+      await copyCanvas(canvas, card);
       return true;
     } catch {
       settingsError = 'Total Spend screenshot could not be copied.';
@@ -509,22 +510,16 @@
       ) !== null
     );
   }
-  function handleOptionsKey(event: KeyboardEvent) {
-    const menu = (event.currentTarget as HTMLElement).closest<HTMLDetailsElement>(
-      'details.options-menu',
-    );
-    if (!menu) return;
-    if (event.key !== 'Escape' || !menu.open) return;
-    event.preventDefault();
-    event.stopPropagation();
-    closeOptionsMenu(true);
-  }
   function closeOptionsMenu(restoreFocus = false) {
     if (shareMenuElement?.open) shareMenuElement.open = false;
     shareMenuOpen = false;
     if (!optionsMenuElement?.open) return;
     optionsMenuElement.open = false;
     if (restoreFocus) optionsMenuElement.querySelector<HTMLElement>('summary')?.focus();
+  }
+  function runOption(action: () => void) {
+    action();
+    closeOptionsMenu();
   }
   function handleWindowPointerDown(event: PointerEvent) {
     if (
@@ -679,7 +674,9 @@
         .querySelectorAll<HTMLElement>(
           '.floating-chrome, .screen-page, .screen-header, .footer, .notice',
         )
-        .forEach((element) => resizeObserver?.observe(element));
+        .forEach((element) => {
+          resizeObserver?.observe(element);
+        });
       scheduleWindowFit();
     };
     const mutationObserver = new MutationObserver(observePanelParts);
@@ -691,6 +688,14 @@
       if (event.defaultPrevented || event.isComposing) return;
       if (event.key === 'Escape') {
         event.preventDefault();
+        if (
+          optionsMenuElement?.open &&
+          event.target instanceof Node &&
+          optionsMenuElement.contains(event.target)
+        ) {
+          closeOptionsMenu(true);
+          return;
+        }
         if (showAbout) {
           void closeAbout();
           return;
@@ -784,6 +789,7 @@
     Drag to reorder. With a keyboard, use Alt plus Up Arrow or Alt plus Down Arrow.
   </p>
   {#if renderedResizeEdge === 'top'}
+    <!-- biome-ignore lint/a11y/useSemanticElements: This separator resizes the window by pointer drag. -->
     <div
       class="panel-resize-dragger panel-resize-dragger--top"
       role="separator"
@@ -793,7 +799,8 @@
     ></div>
   {/if}
   {#if floatingWindow}
-    <header class="floating-chrome" aria-label="OpenQuota window controls">
+    <!-- biome-ignore lint/a11y/useSemanticElements: Names the window controls as a group without form semantics. -->
+    <div class="floating-chrome" role="group" aria-label="OpenQuota window controls">
       <div class="floating-chrome__drag">
         <OpenQuotaMark size={14} />
         <span>OpenQuota</span>
@@ -806,7 +813,7 @@
       >
         <Icon name="close" size={12} strokeWidth={2.1} />
       </button>
-    </header>
+    </div>
   {/if}
   {#if settingsState}
     {#if screen !== 'dashboard'}
@@ -967,26 +974,15 @@
               </button>
             {/if}
             <details class="options-menu" bind:this={optionsMenuElement}>
-              <summary aria-label="Open options" onkeydown={handleOptionsKey}>
+              <summary aria-label="Open options">
                 <span>Options</span><Icon name="chevron-down" size={11} strokeWidth={2.2} />
               </summary>
-              <div
-                class="options-menu__panel"
-                role="menu"
-                aria-label="Options menu"
-                tabindex="-1"
-                onkeydown={handleOptionsKey}
-                onclick={(event) => {
-                  if (event.target instanceof Element && event.target.closest('button')) {
-                    closeOptionsMenu();
-                  }
-                }}
-              >
+              <div class="options-menu__panel" role="menu" aria-label="Options menu" tabindex="-1">
                 <button
                   class="menu-item"
                   type="button"
                   aria-label="Customize"
-                  onclick={() => navigate('customize')}
+                  onclick={() => runOption(() => navigate('customize'))}
                 >
                   <Icon name="sliders" /><span>Customize</span><kbd>↩</kbd>
                 </button>
@@ -994,7 +990,7 @@
                   class="menu-item"
                   type="button"
                   aria-label="Settings"
-                  onclick={() => navigate('settings')}
+                  onclick={() => runOption(() => navigate('settings'))}
                 >
                   <Icon name="gear" /><span>Settings</span><kbd>{shortcuts.settings}</kbd>
                 </button>
@@ -1013,25 +1009,32 @@
                       {#each settingsState.settings.providers.filter(
                         (provider) => provider.enabled && catalog.provider(provider.id),
                       ) as provider (provider.id)}
-                        <button type="button" onclick={() => shareProvider(provider.id)}>
+                        <button
+                          type="button"
+                          onclick={() => runOption(() => shareProvider(provider.id))}
+                        >
                           {providerDisplayName(provider.id)}
                         </button>
                       {/each}
                     {/if}
                   </div>
                 </details>
-                <button class="menu-item" type="button" onclick={() => void checkForUpdates(true)}>
+                <button
+                  class="menu-item"
+                  type="button"
+                  onclick={() => runOption(() => checkForUpdates(true))}
+                >
                   <Icon name="refresh" /><span>Check for Updates…</span>
                 </button>
                 <hr>
-                <button class="menu-item" type="button" onclick={openAbout}>
+                <button class="menu-item" type="button" onclick={() => runOption(openAbout)}>
                   <Icon name="about" /><span>About OpenQuota</span>
                 </button>
                 <button
                   class="menu-item menu-item--danger"
                   type="button"
                   aria-label="Quit OpenQuota"
-                  onclick={quitApp}
+                  onclick={() => runOption(quitApp)}
                 >
                   <Icon name="power" /><span>Quit OpenQuota</span><kbd>{shortcuts.quit}</kbd>
                 </button>
@@ -1079,18 +1082,15 @@
     {/if}
 
     {#if showAbout}
-      <div
-        class="about-backdrop"
-        role="presentation"
-        onclick={closeAboutFromBackdrop}
-        onkeydown={handleAboutKeydown}
-      >
+      <!-- biome-ignore lint/a11y/noStaticElementInteractions: The backdrop dismisses on pointer click, with Escape and a close button provided inside the dialog. -->
+      <div class="about-backdrop" role="presentation" onclick={closeAboutFromBackdrop}>
         <div
           class="about-card"
           role="dialog"
           tabindex="-1"
           aria-modal="true"
           aria-label="About OpenQuota"
+          onkeydown={handleAboutKeydown}
         >
           <button
             bind:this={aboutCloseButton}
@@ -1118,6 +1118,7 @@
     </div>
   {/if}
   {#if renderedResizeEdge === 'bottom'}
+    <!-- biome-ignore lint/a11y/useSemanticElements: This separator resizes the window by pointer drag. -->
     <div
       class="panel-resize-dragger panel-resize-dragger--bottom"
       role="separator"
@@ -1189,7 +1190,6 @@
       height: 24px;
       grid-row: 1;
       grid-column: 3;
-      align-items: center;
       justify-self: center;
       padding: 0;
       border: 0;
@@ -1315,12 +1315,6 @@
       display: none;
     }
 
-    .options-menu[open] > summary,
-    .options-menu > summary:hover {
-      color: var(--text);
-      background: var(--button-hover);
-    }
-
     .options-menu > div {
       position: absolute;
       right: 0;
@@ -1343,10 +1337,6 @@
       background: none;
       font-size: 11px;
       text-align: left;
-    }
-
-    .options-menu button:hover {
-      background: var(--button-hover);
     }
 
     .screen-header {
@@ -1373,6 +1363,18 @@
       cursor: pointer;
     }
 
+    .share-menu button {
+      width: 100%;
+      min-height: 30px;
+      padding: 7px 9px;
+      border: 0;
+      border-radius: 5px;
+      color: var(--text);
+      background: transparent;
+      font-size: 11px;
+      text-align: left;
+    }
+
     .screen-header > button:first-child {
       font-size: 23px;
       line-height: 20px;
@@ -1386,16 +1388,6 @@
 
     .screen-header button:hover {
       background: var(--button-hover);
-    }
-
-    :root[data-density='compact'] .content {
-      padding: 9px 11px 7px;
-    }
-
-    :root[data-density='compact'] .footer {
-      min-height: 48px;
-      padding-top: 6px;
-      padding-bottom: 6px;
     }
 
     .content {
@@ -1433,6 +1425,16 @@
       box-shadow: 0 -10px 18px -18px rgba(0, 0, 0, 0.65);
     }
 
+    :root[data-density='compact'] .content {
+      padding: 9px 11px 7px;
+    }
+
+    :root[data-density='compact'] .footer {
+      min-height: 48px;
+      padding-top: 6px;
+      padding-bottom: 6px;
+    }
+
     .identity {
       padding: 0;
       border: 0;
@@ -1453,10 +1455,6 @@
       align-items: center;
       gap: 6px;
       margin-left: auto;
-    }
-
-    .footer-actions .options-menu {
-      margin-left: 0;
     }
 
     .window-mode-toggle {
@@ -1498,6 +1496,10 @@
       margin-left: auto;
     }
 
+    .footer-actions .options-menu {
+      margin-left: 0;
+    }
+
     .options-menu > summary {
       display: flex;
       width: auto;
@@ -1519,14 +1521,6 @@
       font-style: normal;
     }
 
-    .options-menu > summary .symbol-icon {
-      transition: transform 160ms ease;
-    }
-
-    .options-menu[open] > summary .symbol-icon {
-      transform: rotate(180deg);
-    }
-
     .options-menu > div {
       bottom: 34px;
       width: 172px;
@@ -1536,10 +1530,6 @@
       box-shadow: 0 10px 32px rgba(0, 0, 0, 0.28);
       transform-origin: bottom right;
       animation: menu-in 180ms ease-out both;
-    }
-
-    .options-menu button {
-      font-size: 11px;
     }
 
     .screen-header {
@@ -1605,8 +1595,11 @@
       text-align: left;
     }
 
-    .options-menu .menu-item span,
     .share-menu > summary span {
+      flex: 1;
+    }
+
+    .options-menu .menu-item span {
       flex: 1;
     }
 
@@ -1640,14 +1633,6 @@
       place-items: center;
     }
 
-    .share-menu > summary .share-menu__direction .symbol-icon {
-      transition: transform 140ms ease;
-    }
-
-    .share-menu[open] > summary .share-menu__direction .symbol-icon {
-      transform: translateX(-2px);
-    }
-
     .share-menu > div {
       position: absolute;
       right: calc(100% - 2px);
@@ -1663,16 +1648,14 @@
       animation: menu-in 160ms ease-out both;
     }
 
-    .share-menu button {
-      width: 100%;
-      min-height: 30px;
-      padding: 7px 9px;
-      border: 0;
-      border-radius: 5px;
+    .options-menu[open] > summary,
+    .options-menu > summary:hover {
       color: var(--text);
-      background: transparent;
-      font-size: 11px;
-      text-align: left;
+      background: var(--button-hover);
+    }
+
+    .options-menu button:hover {
+      background: var(--button-hover);
     }
 
     .transient-pill {
@@ -1695,6 +1678,22 @@
 
     .transient-pill .symbol-icon {
       color: #34c759;
+    }
+
+    .options-menu > summary .symbol-icon {
+      transition: transform 160ms ease;
+    }
+
+    .share-menu > summary .share-menu__direction .symbol-icon {
+      transition: transform 140ms ease;
+    }
+
+    .options-menu[open] > summary .symbol-icon {
+      transform: rotate(180deg);
+    }
+
+    .share-menu[open] > summary .share-menu__direction .symbol-icon {
+      transform: translateX(-2px);
     }
 
     .about-backdrop {

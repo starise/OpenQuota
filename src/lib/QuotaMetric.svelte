@@ -166,6 +166,7 @@
           <span
             class="pace-warning"
             data-tooltip={paceDetail ?? undefined}
+            role="img"
             aria-label={pace.severity === 'spent' ? 'Limit reached' : 'Will reach limit'}
             ><span class="pace-warning__icon"
               ><Icon name="flame-filled" size={11} strokeWidth={1.8} /></span

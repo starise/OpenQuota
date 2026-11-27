@@ -31,9 +31,9 @@
     const controls = [
       ...sheet.querySelectorAll<HTMLElement>('input:not(:disabled), button:not(:disabled)'),
     ];
-    if (controls.length === 0) return;
-    const first = controls[0];
-    const last = controls.at(-1)!;
+    const [first] = controls;
+    const last = controls.at(-1);
+    if (!first || !last) return;
     if (event.shiftKey && document.activeElement === first) {
       event.preventDefault();
       last.focus();
@@ -44,18 +44,20 @@
   }
 </script>
 
+<!-- biome-ignore lint/a11y/noStaticElementInteractions: The backdrop absorbs clicks so they cannot reach the window; dialog controls handle keyboard input. -->
 <div
   class="rename-backdrop"
   role="presentation"
   onpointerdown={(event) => event.stopPropagation()}
   onclick={(event) => event.stopPropagation()}
-  onkeydown={handleKeydown}
 >
   <div
     class="rename-sheet"
     bind:this={sheet}
     role="dialog"
+    tabindex="-1"
     aria-modal="true"
+    onkeydown={handleKeydown}
     aria-labelledby="rename-title"
     aria-describedby="rename-message"
   >

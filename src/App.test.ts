@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App.svelte';
 import type { PanelHeightMode } from './lib/backend';
+import * as shareCard from './lib/shareCard';
 import type {
   AppSettings,
   ProviderCatalog,
@@ -17,6 +18,7 @@ import {
   providerCatalog,
   settingsState,
 } from './test/appFixtures';
+import { required } from './test/required';
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -193,7 +195,7 @@ describe('OpenQuota dashboard', () => {
       configurable: true,
       value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
     });
-    const defaultInvoke = mocks.invoke.getMockImplementation()!;
+    const defaultInvoke = required(mocks.invoke.getMockImplementation());
     mockInvoke((command: string, args?: InvokeArgs) => {
       if (command === 'get_app_settings')
         return Promise.resolve({
@@ -214,7 +216,7 @@ describe('OpenQuota dashboard', () => {
         'panel-resize-dragger--bottom',
       );
 
-      await fireEvent.pointerDown(dragSurface!, { button: 0 });
+      await fireEvent.pointerDown(required(dragSurface), { button: 0 });
       expect(mocks.startDragging).toHaveBeenCalledOnce();
     } finally {
       delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
@@ -233,7 +235,7 @@ describe('OpenQuota dashboard', () => {
       value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
     });
     let appliedMode: AppSettings['windowMode'] = 'floating';
-    const defaultInvoke = mocks.invoke.getMockImplementation()!;
+    const defaultInvoke = required(mocks.invoke.getMockImplementation());
     mockInvoke((command: string, args?: InvokeArgs) => {
       if (command === 'get_app_settings')
         return Promise.resolve({
@@ -434,7 +436,9 @@ describe('OpenQuota dashboard', () => {
   it('renames an observed extra Claude account card', async () => {
     const providerId = 'claude@1234abcd';
     const extraCatalog = structuredClone(providerCatalog);
-    const baseDefinition = extraCatalog.providers.find((provider) => provider.id === 'claude')!;
+    const baseDefinition = required(
+      extraCatalog.providers.find((provider) => provider.id === 'claude'),
+    );
     extraCatalog.providers.push({
       ...baseDefinition,
       id: providerId,
@@ -531,9 +535,9 @@ describe('OpenQuota dashboard', () => {
             codex: {
               ...codexState,
               snapshot: {
-                ...codexState.snapshot!,
+                ...required(codexState.snapshot),
                 usage: {
-                  ...codexState.snapshot!.usage,
+                  ...required(codexState.snapshot).usage,
                   today: {
                     tokens: 2_100_000,
                     estimatedCostUsd: null,
@@ -1158,8 +1162,8 @@ describe('OpenQuota dashboard', () => {
     const initialClaude: ProviderViewState = {
       ...claudeState,
       snapshot: {
-        ...claudeState.snapshot!,
-        quotas: claudeState.snapshot!.quotas.filter((quota) => quota.id !== 'extra'),
+        ...required(claudeState.snapshot),
+        quotas: required(claudeState.snapshot).quotas.filter((quota) => quota.id !== 'extra'),
       },
     };
     const initialState: UsageViewState = { providers: { claude: initialClaude } };
@@ -1347,7 +1351,9 @@ describe('OpenQuota dashboard', () => {
   });
 
   it('offers configuration when an API-key provider needs authentication', async () => {
-    const definition = providerCatalog.providers.find((provider) => provider.id === 'openrouter')!;
+    const definition = required(
+      providerCatalog.providers.find((provider) => provider.id === 'openrouter'),
+    );
     const failedOpenRouter: ProviderViewState = {
       source: 'none',
       refreshing: false,
@@ -1421,7 +1427,7 @@ describe('OpenQuota dashboard', () => {
   it('shows platform-correct Ctrl shortcuts and handles Ctrl+Q', async () => {
     render(App);
     await screen.findByText('Plus');
-    await fireEvent.click(screen.getByText('Options').closest('summary')!);
+    await fireEvent.click(required(screen.getByText('Options').closest('summary')));
     expect(screen.getByText('Ctrl+,')).toBeInTheDocument();
     expect(screen.getByText('Ctrl+Q')).toBeInTheDocument();
 
@@ -1432,12 +1438,58 @@ describe('OpenQuota dashboard', () => {
   it('closes the custom Options surface after a command like a native menu', async () => {
     render(App);
     await screen.findByText('Plus');
-    const summary = screen.getByText('Options').closest('summary')!;
-    const menu = summary.closest('details')!;
+    const summary = required(screen.getByText('Options').closest('summary'));
+    const menu = required(summary.closest('details'));
     await fireEvent.click(summary);
     expect(menu).toHaveAttribute('open');
     await fireEvent.click(screen.getByRole('button', { name: 'Check for Updates…' }));
     expect(menu).not.toHaveAttribute('open');
+  });
+
+  it.each(['trigger', 'menu item'])('closes Options with Escape from the %s', async (origin) => {
+    render(App);
+    const summary = await screen.findByLabelText('Open options');
+    const menu = required(summary.closest('details'));
+    await fireEvent.click(summary);
+    const focused =
+      origin === 'trigger' ? summary : screen.getByRole('button', { name: 'Settings' });
+    focused.focus();
+    expect(menu).toHaveAttribute('open');
+
+    await fireEvent.keyDown(focused, { key: 'Escape' });
+
+    expect(menu).not.toHaveAttribute('open');
+    expect(summary).toHaveFocus();
+    expect(mocks.invoke).not.toHaveBeenCalledWith('dismiss_main_window');
+  });
+
+  it('copies the provider name and rendered card lines when PNG clipboard is unavailable', async () => {
+    const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const canvas = document.createElement('canvas');
+    const toBlob = vi.spyOn(canvas, 'toBlob');
+    const renderCard = vi.spyOn(shareCard, 'renderProviderShareCard').mockReturnValue(canvas);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+
+    try {
+      const { container } = render(App);
+      await screen.findByText('Plus');
+      const card = required(container.querySelector<HTMLElement>('[data-provider-id="codex"]'));
+      Object.defineProperty(card, 'innerText', { value: ' Session 32% used\nWeekly 11% used ' });
+      await fireEvent.click(screen.getByLabelText('Open options'));
+      await fireEvent.click(screen.getByText('Share Screenshot'));
+      await fireEvent.click(await screen.findByRole('button', { name: 'Codex' }));
+
+      await waitFor(() => {
+        expect(writeText).toHaveBeenCalledWith('Codex\nSession 32% used\nWeekly 11% used');
+      });
+      expect(toBlob).not.toHaveBeenCalled();
+    } finally {
+      renderCard.mockRestore();
+      toBlob.mockRestore();
+      if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard);
+      else Reflect.deleteProperty(navigator, 'clipboard');
+    }
   });
 
   it('resets native Options and Share details when the popup is hidden', async () => {
@@ -1454,10 +1506,10 @@ describe('OpenQuota dashboard', () => {
     render(App);
     await screen.findByText('Plus');
     const optionsSummary = screen.getByLabelText('Open options');
-    const optionsMenu = optionsSummary.closest('details')!;
+    const optionsMenu = required(optionsSummary.closest('details'));
     await fireEvent.click(optionsSummary);
-    const shareSummary = screen.getByText('Share Screenshot').closest('summary')!;
-    const shareMenu = shareSummary.closest('details')!;
+    const shareSummary = required(screen.getByText('Share Screenshot').closest('summary'));
+    const shareMenu = required(shareSummary.closest('details'));
     await fireEvent.click(shareSummary);
     expect(optionsMenu).toHaveAttribute('open');
     expect(shareMenu).toHaveAttribute('open');
@@ -1466,7 +1518,7 @@ describe('OpenQuota dashboard', () => {
     );
 
     await waitFor(() => expect(emitMainWindowHidden).toBeTypeOf('function'));
-    emitMainWindowHidden!();
+    required(emitMainWindowHidden)();
 
     await waitFor(() => {
       expect(optionsMenu).not.toHaveAttribute('open');
@@ -1486,7 +1538,7 @@ describe('OpenQuota dashboard', () => {
 
   it('honors Reduce Motion without overriding a manually sized native panel', async () => {
     const originalMatchMedia = window.matchMedia;
-    const defaultInvoke = mocks.invoke.getMockImplementation()!;
+    const defaultInvoke = required(mocks.invoke.getMockImplementation());
     mocks.invoke.mockImplementation((command: string, args?: InvokeArgs) => {
       if (command === 'get_panel_height_mode') return Promise.resolve('manual');
       return defaultInvoke(command, args);
@@ -1642,7 +1694,7 @@ describe('OpenQuota dashboard', () => {
       configurable: true,
       value: {},
     });
-    const defaultInvoke = mocks.invoke.getMockImplementation()!;
+    const defaultInvoke = required(mocks.invoke.getMockImplementation());
     let persistedHeightMode: PanelHeightMode = 'manual';
     mocks.invoke.mockImplementation((command: string, args?: InvokeArgs) => {
       if (command === 'get_panel_height_mode') return Promise.resolve(persistedHeightMode);
@@ -1746,7 +1798,7 @@ describe('OpenQuota dashboard', () => {
     await waitFor(() => expect(hide).toHaveFocus());
     await fireEvent.keyDown(hide, { key: 'ArrowDown' });
     expect(screen.getByRole('menuitem', { name: 'Refresh Codex' })).toHaveFocus();
-    await fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    await fireEvent.keyDown(required(document.activeElement), { key: 'Escape' });
     expect(document.querySelector('.context-menu')).toBeNull();
   });
 
@@ -1798,7 +1850,7 @@ describe('OpenQuota dashboard', () => {
 
     await fireEvent.keyDown(theme, { key: 'ArrowDown' });
     expect(screen.getByRole('listbox', { name: 'Theme' })).toBeInTheDocument();
-    await fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    await fireEvent.keyDown(required(document.activeElement), { key: 'Escape' });
 
     expect(screen.queryByRole('listbox', { name: 'Theme' })).not.toBeInTheDocument();
     expect(theme).toHaveFocus();

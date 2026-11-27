@@ -185,6 +185,7 @@ function makeLift(source: HTMLElement, start: ReorderPoint) {
   lift.classList.remove('reorder-source');
   lift.classList.add('pointer-reorder-lift');
   makePreviewNonInteractive(lift);
+  lift.style.transition = 'none';
   lift.style.width = `${rect.width}px`;
   lift.style.height = `${rect.height}px`;
   layer.append(lift);

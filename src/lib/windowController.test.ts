@@ -1,5 +1,6 @@
 import { cleanup, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { required } from '../test/required';
 
 const mocks = vi.hoisted(() => ({
   currentMonitor: vi.fn(),
@@ -34,10 +35,10 @@ describe('hybrid window controller', () => {
         <div class="panel-resize-dragger"></div>
       </main>
     `;
-    const page = document.querySelector<HTMLElement>('.screen-page')!;
-    const header = document.querySelector<HTMLElement>('.screen-header')!;
-    const footer = document.querySelector<HTMLElement>('.footer')!;
-    const dragger = document.querySelector<HTMLElement>('.panel-resize-dragger')!;
+    const page = required(document.querySelector<HTMLElement>('.screen-page'));
+    const header = required(document.querySelector<HTMLElement>('.screen-header'));
+    const footer = required(document.querySelector<HTMLElement>('.footer'));
+    const dragger = required(document.querySelector<HTMLElement>('.panel-resize-dragger'));
     page.getBoundingClientRect = vi.fn(
       () =>
         ({
@@ -112,7 +113,7 @@ describe('hybrid window controller', () => {
   });
 
   it('uses the monitor cap for oversized automatic content', async () => {
-    const page = document.querySelector<HTMLElement>('.screen-page')!;
+    const page = required(document.querySelector<HTMLElement>('.screen-page'));
     page.getBoundingClientRect = vi.fn(
       () =>
         ({
@@ -143,7 +144,7 @@ describe('hybrid window controller', () => {
 
   it('keeps Settings at the most recently measured dashboard height', async () => {
     let activeScreen: 'dashboard' | 'settings' = 'dashboard';
-    const page = document.querySelector<HTMLElement>('.screen-page')!;
+    const page = required(document.querySelector<HTMLElement>('.screen-page'));
     let renderedHeight = 300;
     page.getBoundingClientRect = vi.fn(
       () =>
@@ -182,7 +183,7 @@ describe('hybrid window controller', () => {
 
   it('preserves dashboard content height when floating chrome changes in Settings', async () => {
     let activeScreen: 'dashboard' | 'settings' = 'dashboard';
-    const page = document.querySelector<HTMLElement>('.screen-page')!;
+    const page = required(document.querySelector<HTMLElement>('.screen-page'));
     let renderedHeight = 300;
     page.getBoundingClientRect = vi.fn(
       () =>
@@ -200,7 +201,7 @@ describe('hybrid window controller', () => {
     const chrome = document.createElement('header');
     chrome.className = 'floating-chrome';
     Object.defineProperty(chrome, 'offsetHeight', { configurable: true, value: 32 });
-    document.querySelector('main')!.prepend(chrome);
+    required(document.querySelector('main')).prepend(chrome);
     const controller = createWindowController({
       screen: () => activeScreen,
       refreshing: () => false,

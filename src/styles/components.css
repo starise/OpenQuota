@@ -57,6 +57,9 @@
   .settings-section,
   .customize-list,
   .metric-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
     border-radius: 12px;
   }
 
@@ -79,6 +82,7 @@
   }
 
   .reorder-source {
+    /* biome-ignore lint/complexity/noImportantStyles: Hide the original row even while its hover and focus styles are active. */
     opacity: 0 !important;
   }
 
@@ -99,7 +103,6 @@
     opacity: 1;
     transform: scale(1.018);
     transform-origin: center;
-    transition: none !important;
   }
 
   .pointer-reorder-lift.provider-section > .provider-card,
@@ -153,12 +156,15 @@
   }
 
   .pointer-reorder-lift * {
+    /* biome-ignore lint/complexity/noImportantStyles: Descendants of the drag preview must not intercept hit testing. */
     pointer-events: none !important;
   }
 
   :root.is-reordering,
   :root.is-reordering * {
+    /* biome-ignore lint/complexity/noImportantStyles: The drag cursor overrides the cursors of controls under the pointer. */
     cursor: grabbing !important;
+    /* biome-ignore lint/complexity/noImportantStyles: Dragging suppresses selection even on normally selectable controls. */
     user-select: none !important;
   }
 
@@ -280,6 +286,7 @@
     }
   }
 
+  /* biome-ignore-start lint/complexity/noImportantStyles: Reduced-motion preferences must override component scroll, animation, and transition styles. */
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
@@ -303,6 +310,7 @@
   :root[data-reduced-motion] button:active {
     transform: none !important;
   }
+  /* biome-ignore-end lint/complexity/noImportantStyles: End reduced-motion overrides. */
 
   @keyframes detail-in {
     from {

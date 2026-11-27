@@ -180,7 +180,10 @@
     aria-controls={listboxId}
     aria-expanded={open}
     aria-haspopup="listbox"
-    onclick={() => (open ? (open = false) : void openAndFocus())}
+    onclick={() => {
+      if (open) open = false;
+      else void openAndFocus();
+    }}
     onkeydown={triggerKeydown}
   >
     <span>{selectedLabel}</span><Icon name="chevron-down" size={12} strokeWidth={2} />

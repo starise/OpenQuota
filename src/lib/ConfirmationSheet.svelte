@@ -31,9 +31,9 @@
     }
     if (event.key !== 'Tab' || !sheet) return;
     const controls = [...sheet.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];
-    if (controls.length === 0) return;
-    const first = controls[0];
-    const last = controls.at(-1)!;
+    const [first] = controls;
+    const last = controls.at(-1);
+    if (!first || !last) return;
     if (event.shiftKey && document.activeElement === first) {
       event.preventDefault();
       last.focus();
@@ -48,13 +48,14 @@
   class="confirmation-backdrop"
   role="presentation"
   onpointerdown={(event) => event.stopPropagation()}
-  onkeydown={handleKeydown}
 >
   <div
     class="confirmation-sheet"
     bind:this={sheet}
     role="alertdialog"
+    tabindex="-1"
     aria-modal="true"
+    onkeydown={handleKeydown}
     aria-labelledby="confirmation-title"
     aria-describedby="confirmation-message"
   >
@@ -168,17 +169,22 @@
       transform 90ms ease;
   }
 
+  .confirmation-sheet__actions button:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--meter-fill) 65%, transparent);
+    outline-offset: 2px;
+  }
+
+  .confirmation-sheet__actions button:disabled {
+    cursor: default;
+    opacity: 0.58;
+  }
+
   .confirmation-sheet__actions button:hover:not(:disabled) {
     background: color-mix(in srgb, var(--text) 11%, var(--tray));
   }
 
   .confirmation-sheet__actions button:active:not(:disabled) {
     transform: scale(0.97);
-  }
-
-  .confirmation-sheet__actions button:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--meter-fill) 65%, transparent);
-    outline-offset: 2px;
   }
 
   .confirmation-sheet__actions .confirmation-sheet__confirm {
@@ -190,11 +196,6 @@
 
   .confirmation-sheet__actions .confirmation-sheet__confirm:hover:not(:disabled) {
     background: color-mix(in srgb, var(--meter-critical) 88%, #000);
-  }
-
-  .confirmation-sheet__actions button:disabled {
-    cursor: default;
-    opacity: 0.58;
   }
 
   @keyframes confirmation-backdrop-in {

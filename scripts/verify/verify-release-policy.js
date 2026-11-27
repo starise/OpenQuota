@@ -27,14 +27,14 @@ const windowsSigning = validate.steps.find((step) => step.id === 'signing_policy
 const macosSigning = macos.steps.find((step) => step.id === 'signing');
 assert.equal(
   windowsSigning?.env?.ENABLE_WINDOWS_NATIVE_SIGNING,
-  "${{ vars.ENABLE_WINDOWS_NATIVE_SIGNING || 'false' }}",
+  `\${{ vars.ENABLE_WINDOWS_NATIVE_SIGNING || 'false' }}`,
 );
 assert.equal(
   macosSigning?.env?.ENABLE_MACOS_NATIVE_SIGNING,
-  "${{ vars.ENABLE_MACOS_NATIVE_SIGNING || 'false' }}",
+  `\${{ vars.ENABLE_MACOS_NATIVE_SIGNING || 'false' }}`,
 );
 
-const tagCommit = '${{ needs.validate.outputs.release_commit }}';
+const tagCommit = `\${{ needs.validate.outputs.release_commit }}`;
 for (const jobId of ['prepare-release', 'publish-artifacts', 'build-macos', 'publish-release']) {
   const checkout = release.jobs[jobId].steps.find((step) =>
     step.uses?.startsWith('actions/checkout@'),
@@ -52,7 +52,7 @@ for (const job of [build, macos]) {
   );
   assert.equal(
     smokeCheckout?.with?.ref,
-    '${{ github.workflow_sha }}',
+    `\${{ github.workflow_sha }}`,
     'Use smoke tooling from the release workflow commit.',
   );
   assert.ok(

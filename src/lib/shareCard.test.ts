@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { codexState, providerCatalogIndex, settingsState } from '../test/appFixtures';
+import { required } from '../test/required';
 import { ProviderCatalogIndex } from './metrics';
 import {
   buildProviderShareRows as buildProviderShareRowsWithCatalog,
@@ -58,7 +59,7 @@ describe('share card layout', () => {
   });
 
   it('exports only the provider rows visible on the dashboard', () => {
-    const snapshot = codexState.snapshot!;
+    const snapshot = required(codexState.snapshot);
     const settings = settingsState.settings;
     const collapsed = settings.providers[0];
     const collapsedRows = buildProviderShareRows(
@@ -98,7 +99,7 @@ describe('share card layout', () => {
   });
 
   it('marks partial USD in provider usage rows without changing token totals', () => {
-    const snapshot = structuredClone(codexState.snapshot!);
+    const snapshot = structuredClone(required(codexState.snapshot));
     snapshot.usage.today = {
       tokens: 500,
       estimatedCostUsd: 0.03,
@@ -132,7 +133,7 @@ describe('share card layout', () => {
   });
 
   it('keeps provider notices in exported cards', () => {
-    const snapshot = structuredClone(codexState.snapshot!);
+    const snapshot = structuredClone(required(codexState.snapshot));
     snapshot.notices = [
       {
         id: 'rateLimited',
@@ -157,7 +158,7 @@ describe('share card layout', () => {
   });
 
   it('keeps provider-supplied count units in exported quota rows', () => {
-    const snapshot = structuredClone(codexState.snapshot!);
+    const snapshot = structuredClone(required(codexState.snapshot));
     snapshot.quotas[0] = {
       ...snapshot.quotas[0],
       format: 'count',
@@ -180,7 +181,7 @@ describe('share card layout', () => {
 
   it('omits pacing copy for an unused non-session quota', () => {
     const now = Date.parse('2026-08-12T12:00:00Z');
-    const snapshot = structuredClone(codexState.snapshot!);
+    const snapshot = structuredClone(required(codexState.snapshot));
     snapshot.quotas[1] = {
       ...snapshot.quotas[1],
       usedPercent: 0,
@@ -269,10 +270,10 @@ describe('share card layout', () => {
   });
 
   it('keeps always-visible rows ahead of expanded rows like the dashboard', () => {
-    const snapshot = codexState.snapshot!;
+    const snapshot = required(codexState.snapshot);
     const settings = settingsState.settings;
     const layout = settings.providers[0];
-    const metric = (id: string) => layout.metrics.find((item) => item.id === id)!;
+    const metric = (id: string) => required(layout.metrics.find((item) => item.id === id));
     const interleaved = {
       ...layout,
       expanded: true,
@@ -293,7 +294,7 @@ describe('share card layout', () => {
     const layout = { ...settings.providers[0], expanded: true };
     const rows = buildProviderShareRows(
       'codex',
-      codexState.snapshot!,
+      required(codexState.snapshot),
       layout,
       settings,
       Date.now(),
