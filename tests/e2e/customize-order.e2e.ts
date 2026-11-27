@@ -23,6 +23,7 @@ test('reorders providers in Customize with a mouse drag', async ({ page }) => {
 
   await expect(rows.nth(0)).toContainText('Claude');
   await expect(rows.nth(1)).toContainText('Codex');
+  await expect(handle).toHaveAttribute('aria-expanded', 'false');
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -36,4 +37,47 @@ test('reorders providers in Customize with a mouse drag', async ({ page }) => {
       }),
     )
     .toEqual(['claude', 'codex']);
+});
+
+test('moves a provider from its grip controls and returns focus to that provider', async ({
+  page,
+}) => {
+  await openApp(page);
+  await page.getByLabel('Open options').click();
+  await page.getByRole('button', { name: 'Customize' }).click();
+
+  const customize = page.getByRole('region', { name: 'Customize' });
+  const rows = customize.getByRole('listitem');
+  const grip = customize.getByRole('button', { name: 'Move Codex', exact: true });
+  const moveUp = customize.getByRole('button', { name: 'Move up', exact: true });
+  const moveDown = customize.getByRole('button', { name: 'Move down', exact: true });
+
+  await grip.focus();
+  await page.keyboard.press('Space');
+  await expect(grip).toHaveAttribute('aria-expanded', 'true');
+  await expect(moveUp).toBeDisabled();
+  await expect(moveDown).toBeFocused();
+  const gripBounds = await grip.boundingBox();
+  const moveBounds = await moveDown.boundingBox();
+  if (!gripBounds || !moveBounds) throw new Error('Provider reorder controls are not visible.');
+  expect(moveBounds.y).toBeGreaterThanOrEqual(gripBounds.y + gripBounds.height);
+  await page.keyboard.press('Enter');
+
+  await expect(rows.nth(0)).toContainText('Claude');
+  await expect(rows.nth(1)).toContainText('Codex');
+  await expect(grip).toBeFocused();
+  await expect(grip).toHaveAttribute('aria-expanded', 'false');
+
+  await grip.click();
+  await expect(moveUp).toBeFocused();
+  await expect(moveDown).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await expect(grip).toBeFocused();
+  await expect(moveUp).toBeHidden();
+  await expect(customize).toBeVisible();
+
+  await grip.click();
+  await moveUp.click();
+  await expect(rows.nth(0)).toContainText('Codex');
+  await expect(grip).toBeFocused();
 });

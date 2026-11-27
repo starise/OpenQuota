@@ -216,11 +216,29 @@ function suppressDragClick() {
   window.setTimeout(() => window.removeEventListener('click', stop, true), 0);
 }
 
+export function moveReorderItem(options: PointerReorderOptions, direction: -1 | 1) {
+  if (options.disabled || activeCleanup) return false;
+  const entries = reorderElements(options.group);
+  const from = entries.findIndex((entry) => entry.id === options.id);
+  const target = entries[from + direction];
+  if (from < 0 || !target) return false;
+
+  options.onStart?.();
+  options.onReorder(target.id);
+  options.onEnd?.(true);
+  announceMove(options, target.id);
+  queueMicrotask(() => {
+    const source = reorderElements(options.group).find((entry) => entry.id === options.id)?.element;
+    (focusTargetFor(source) ?? focusTargetFor(target.element))?.focus();
+  });
+  return true;
+}
+
 export function pointerReorder(node: HTMLElement, initialOptions: PointerReorderOptions) {
   let options = initialOptions;
 
   function keyDown(event: KeyboardEvent) {
-    if (options.disabled || activeCleanup || !event.altKey) return;
+    if (!event.altKey) return;
     const direction = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0;
     if (direction === 0) return;
     const grip =
@@ -228,22 +246,9 @@ export function pointerReorder(node: HTMLElement, initialOptions: PointerReorder
     if (options.gripOnly && (!grip || !node.contains(grip))) return;
     if (!options.gripOnly && (!grip || !node.contains(grip)) && event.target !== node) return;
 
-    const entries = reorderElements(options.group);
-    const from = entries.findIndex((entry) => entry.id === options.id);
-    const target = entries[from + direction];
-    if (from < 0 || !target) return;
+    if (!moveReorderItem(options, direction)) return;
     event.preventDefault();
     event.stopPropagation();
-    options.onStart?.();
-    options.onReorder(target.id);
-    options.onEnd?.(true);
-    announceMove(options, target.id);
-    queueMicrotask(() => {
-      const source = reorderElements(options.group).find(
-        (entry) => entry.id === options.id,
-      )?.element;
-      (focusTargetFor(source) ?? focusTargetFor(target.element))?.focus();
-    });
   }
 
   function pointerDown(event: PointerEvent) {

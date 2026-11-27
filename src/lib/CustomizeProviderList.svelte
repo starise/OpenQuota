@@ -1,10 +1,11 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import { flip } from 'svelte/animate';
   import Icon from './Icon.svelte';
   import type { ProviderCatalogIndex } from './metrics';
   import { reorderFlip } from './motion';
   import ProviderIcon from './ProviderIcon.svelte';
-  import { pointerReorder } from './pointerReorder';
+  import { moveReorderItem, type PointerReorderOptions, pointerReorder } from './pointerReorder';
   import type { AppSettings, ProviderLayout } from './types';
 
   interface Props {
@@ -27,7 +28,63 @@
     onSettings,
     reducedMotion,
   }: Props = $props();
+  const visibleProviders = $derived(
+    settings.providers.filter((provider) => catalog.provider(provider.id)),
+  );
+  const reorderableProviders = $derived(visibleProviders.filter((provider) => provider.enabled));
+  let openReorder = $state<{ id: string; trigger: HTMLButtonElement } | null>(null);
+  let reorderActions = $state<HTMLDivElement>();
   const providerDisplayName = (id: string) => catalog.displayName(id, settings.providerNames);
+
+  function reorderOptions(provider: ProviderLayout): PointerReorderOptions {
+    return {
+      id: provider.id,
+      group: 'customize-providers',
+      label: providerDisplayName(provider.id),
+      disabled: !provider.enabled,
+      gripOnly: true,
+      touchGripOnly: true,
+      onReorder: (targetId) => reorder(provider.id, targetId),
+      onStart: onReorderStart,
+      onEnd: (...result) => {
+        openReorder = null;
+        onReorderEnd(...result);
+      },
+    };
+  }
+
+  async function toggleReorder(id: string, trigger: HTMLButtonElement) {
+    if (openReorder?.id === id) {
+      openReorder = null;
+      trigger.focus();
+      return;
+    }
+    openReorder = { id, trigger };
+    await tick();
+    if (openReorder?.trigger === trigger) {
+      reorderActions?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+    }
+  }
+
+  function closeOutside(target: EventTarget | null) {
+    if (
+      openReorder &&
+      target instanceof Node &&
+      !openReorder.trigger.contains(target) &&
+      !reorderActions?.contains(target)
+    ) {
+      openReorder = null;
+    }
+  }
+
+  function closeOnEscape(event: KeyboardEvent) {
+    if (event.key !== 'Escape' || !openReorder) return;
+    event.preventDefault();
+    const { trigger } = openReorder;
+    openReorder = null;
+    trigger.focus();
+  }
+
   function updateProvider(provider: ProviderLayout) {
     onChange({
       ...settings,
@@ -49,42 +106,39 @@
   }
 </script>
 
+<svelte:document onclick={(event) => closeOutside(event.target)} />
+
 <section class="screen customize-screen" aria-label="Customize">
   <!-- biome-ignore lint/a11y/noRedundantRoles: WebKit drops list semantics when list-style is none. -->
   <ul class="customize-list" role="list">
-    {#each settings.providers.filter((provider) =>
-      catalog.provider(provider.id),
-    ) as provider (provider.id)}
+    {#each visibleProviders as provider (provider.id)}
+      {@const reorderIndex = reorderableProviders.indexOf(provider)}
+      {@const expanded = provider.enabled && openReorder?.id === provider.id}
       <li
         class:inactive={!provider.enabled}
+        class:reorder-expanded={expanded}
         class="provider-list-row"
         data-reorder-group={provider.enabled ? 'customize-providers' : undefined}
         data-reorder-id={provider.enabled ? provider.id : undefined}
-        use:pointerReorder={{
-          id: provider.id,
-          group: 'customize-providers',
-          label: providerDisplayName(provider.id),
-          disabled: !provider.enabled,
-          gripOnly: true,
-          touchGripOnly: true,
-          onReorder: (targetId) => reorder(provider.id, targetId),
-          onStart: onReorderStart,
-          onEnd: onReorderEnd,
-        }}
+        use:pointerReorder={reorderOptions(provider)}
         animate:flip={reorderFlip(reducedMotion)}
       >
-        <!-- biome-ignore lint/a11y/useSemanticElements: This handle is operated by drag or Alt+Arrow, with no button activation action. -->
-        <span
-          class="reorder-grip"
+        <button
+          class="reorder-grip provider-reorder-trigger"
+          type="button"
+          disabled={!provider.enabled}
           data-reorder-handle
           data-reorder-touch-handle
-          role="button"
-          tabindex={provider.enabled ? 0 : undefined}
           aria-label={`Move ${providerDisplayName(provider.id)}`}
           aria-describedby="reorder-instructions"
           aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-          ><Icon name="grip-lines" size={16} strokeWidth={2} /></span
+          aria-expanded={expanded}
+          onclick={(event) => void toggleReorder(provider.id, event.currentTarget)}
+          onkeydown={closeOnEscape}
+          onblur={(event) => closeOutside(event.relatedTarget)}
         >
+          <Icon name="grip-lines" size={16} strokeWidth={2} />
+        </button>
         <button class="provider-list-main" type="button" onclick={() => onOpen(provider.id)}>
           <ProviderIcon providerId={provider.id} /><span
             ><b>{providerDisplayName(provider.id)}</b
@@ -108,6 +162,30 @@
         >
           <Icon name="chevron-right" size={13} strokeWidth={2.2} />
         </button>
+        {#if expanded}
+          <div
+            class="provider-reorder-actions"
+            bind:this={reorderActions}
+            onfocusout={(event) => closeOutside(event.relatedTarget)}
+          >
+            <button
+              type="button"
+              disabled={reorderIndex <= 0}
+              onclick={() => moveReorderItem(reorderOptions(provider), -1)}
+              onkeydown={closeOnEscape}
+            >
+              Move up
+            </button>
+            <button
+              type="button"
+              disabled={reorderIndex === reorderableProviders.length - 1}
+              onclick={() => moveReorderItem(reorderOptions(provider), 1)}
+              onkeydown={closeOnEscape}
+            >
+              Move down
+            </button>
+          </div>
+        {/if}
       </li>
     {/each}
   </ul>
@@ -119,6 +197,42 @@
 </section>
 
 <style>
+  .provider-reorder-trigger {
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  .provider-reorder-trigger:disabled {
+    cursor: default;
+  }
+
+  .provider-reorder-actions {
+    display: flex;
+    width: 100%;
+    gap: 4px;
+    padding-inline-start: 26px;
+  }
+
+  .provider-reorder-actions button {
+    padding: 4px 8px;
+    border: 1px solid var(--separator);
+    border-radius: 6px;
+    color: var(--text);
+    background: var(--card);
+    font-size: 11px;
+  }
+
+  .provider-reorder-actions button:disabled {
+    opacity: 0.5;
+  }
+
+  .provider-list-row.reorder-expanded {
+    flex-wrap: wrap;
+  }
+
   :global {
     .provider-list-row {
       display: flex;
