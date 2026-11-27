@@ -12,6 +12,11 @@ When applying a triage role, read [the label mapping](docs/agents/triage-labels.
 
 Before design or implementation, read [the domain documentation guide](docs/agents/domain.md).
 
+## Browser tests
+
+Run `pnpm test:e2e` when changing browser interactions such as keyboard navigation, focus, or drag and drop.
+If Chromium is missing, install it with `pnpm exec playwright install --only-shell chromium`.
+
 ## Commit policy
 
 All commits MUST use the Conventional Commits specs with these additional rules:
