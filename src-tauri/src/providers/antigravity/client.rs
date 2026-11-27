@@ -300,10 +300,8 @@ mod tests {
             r#"{"error":{"status":"PERMISSION_DENIED","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"SUBSCRIPTION_REQUIRED"}]}}"#,
         );
         let temp = tempfile::tempdir().unwrap();
-        let provider = super::super::AntigravityProvider {
-            client: client(&base),
-            access_token_cache: super::super::AccessTokenCache::new(temp.path().join("auth.json")),
-        };
+        let mut provider = super::super::tests::provider_at(temp.path());
+        provider.client = client(&base);
 
         let error = provider.fetch_remote("test-token").unwrap_err();
         assert!(matches!(error, AntigravityError::QuotaAccessDenied));

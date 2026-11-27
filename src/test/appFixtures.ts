@@ -131,13 +131,17 @@ export const providerCatalog: ProviderCatalog = {
       displayName: 'Antigravity',
       shortName: 'A',
       fallbackEnabled: false,
-      localUsageSourceNote: null,
+      localUsageSourceNote: 'From your Antigravity conversation databases (estimated)',
       links: [],
       metrics: [
         quota('antigravity.geminiPro', 'Session', 'geminiPro', true),
         quota('antigravity.geminiWeekly', 'Weekly', 'geminiWeekly'),
         quota('antigravity.claude', 'Claude', 'claude', true),
         quota('antigravity.claudeWeekly', 'Claude Weekly', 'claudeWeekly'),
+        trend('antigravity.trend'),
+        usage('antigravity.today', 'Today', 'today'),
+        usage('antigravity.yesterday', 'Yesterday', 'yesterday'),
+        usage('antigravity.last30', 'Last 30 Days', 'last30Days'),
       ],
     },
     {
@@ -330,7 +334,18 @@ export const antigravityState: ProviderViewState = {
     valueMetrics: [],
     statusMetrics: [],
     notices: [],
-    usage: { today: null, yesterday: null, last30Days: null, daily: [], unknownModels: [] },
+    usage: {
+      today: {
+        tokens: 26513,
+        estimatedCostUsd: null,
+        costEstimated: true,
+        estimateComplete: false,
+      },
+      yesterday: null,
+      last30Days: null,
+      daily: [],
+      unknownModels: ['unpriced-model'],
+    },
   },
 };
 

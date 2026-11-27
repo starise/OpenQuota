@@ -277,11 +277,12 @@ describe('OpenQuota dashboard', () => {
     }
   });
 
-  it('renders Claude and Antigravity independently with provider-specific quota formats', async () => {
+  it('renders provider-specific quotas alongside unpriced Antigravity tokens', async () => {
     const multiProviderSettings = {
       ...settingsState,
       settings: {
         ...settingsState.settings,
+        totalSpendMetric: 'tokens' as const,
         providers: [
           {
             id: 'claude',
@@ -350,11 +351,14 @@ describe('OpenQuota dashboard', () => {
     expect(screen.getByRole('heading', { name: 'Antigravity' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '$37.50 left' })).toBeInTheDocument();
     expect(screen.getAllByRole('progressbar')).toHaveLength(6);
+    const totalSpend = within(screen.getByRole('region', { name: 'Total Spend' }));
     expect(
-      within(screen.getByRole('region', { name: 'Total Spend' })).getByRole('img', {
-        name: 'Only includes Claude and Codex',
+      totalSpend.getByRole('img', {
+        name: 'Only includes Claude and Codex and Antigravity',
       }),
     ).toBeInTheDocument();
+    expect(totalSpend.getByText('Antigravity')).toBeInTheDocument();
+    expect(totalSpend.getByText('26.5K')).toBeInTheDocument();
   });
 
   it('renames an observed Claude card from its context menu', async () => {

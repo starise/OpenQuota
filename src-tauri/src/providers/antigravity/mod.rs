@@ -2,9 +2,10 @@ mod auth;
 mod cli;
 mod client;
 mod discovery;
+mod local_usage;
 mod mapper;
 
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use chrono::Utc;
 use serde_json::{json, Value};
@@ -12,7 +13,12 @@ use thiserror::Error;
 
 use crate::models::{
     MetricDefinition, MetricSection, ProviderDefinition, ProviderSnapshot, QuotaWindow,
-    UsageHistory,
+    UsageHistory, UsagePeriodSelection,
+};
+use crate::{
+    pricing::PricingStore,
+    providers::{log_usage::scan_or_cached_usage, CacheIdentity},
+    storage::Storage,
 };
 
 use self::{
@@ -36,7 +42,7 @@ pub(crate) fn definition() -> ProviderDefinition {
         display_name: "Antigravity".into(),
         short_name: "A".into(),
         fallback_enabled: false,
-        local_usage_source_note: None,
+        local_usage_source_note: Some(local_usage::SOURCE_NOTE.into()),
         links: vec![],
         metrics: vec![
             MetricDefinition::quota(
@@ -79,6 +85,28 @@ pub(crate) fn definition() -> ProviderDefinition {
                 false,
                 "CW",
             ),
+            MetricDefinition::trend("antigravity.trend"),
+            MetricDefinition::usage(
+                "antigravity.today",
+                "Today",
+                UsagePeriodSelection::Today,
+                MetricSection::OnDemand,
+                "T",
+            ),
+            MetricDefinition::usage(
+                "antigravity.yesterday",
+                "Yesterday",
+                UsagePeriodSelection::Yesterday,
+                MetricSection::OnDemand,
+                "Y",
+            ),
+            MetricDefinition::usage(
+                "antigravity.last30",
+                "Last 30 Days",
+                UsagePeriodSelection::Last30Days,
+                MetricSection::OnDemand,
+                "M",
+            ),
         ],
     }
 }
@@ -102,13 +130,21 @@ pub enum AntigravityError {
 pub struct AntigravityProvider {
     client: AntigravityClient,
     access_token_cache: AccessTokenCache,
+    storage: Arc<Storage>,
+    pricing: Arc<PricingStore>,
 }
 
 impl AntigravityProvider {
-    pub fn new(cache_path: PathBuf) -> Result<Self, AntigravityError> {
+    pub fn new(
+        cache_path: PathBuf,
+        storage: Arc<Storage>,
+        pricing: Arc<PricingStore>,
+    ) -> Result<Self, AntigravityError> {
         Ok(Self {
             client: AntigravityClient::new()?,
             access_token_cache: AccessTokenCache::new(cache_path),
+            storage,
+            pricing,
         })
     }
 
@@ -418,7 +454,7 @@ impl crate::providers::UsageProvider for AntigravityProvider {
     }
 
     fn refresh(&self) -> Result<ProviderSnapshot, crate::providers::ProviderError> {
-        self.refresh_inner().map_err(|error| {
+        let mut snapshot = self.refresh_inner().map_err(|error| {
             use crate::models::ProviderErrorKind as Kind;
 
             let kind = match error {
@@ -430,25 +466,48 @@ impl crate::providers::UsageProvider for AntigravityProvider {
                 AntigravityError::Unavailable => Kind::Network,
             };
             crate::providers::ProviderError::from_display(kind, error)
-        })
+        })?;
+        let pricing = self.pricing.current();
+        let mut scan_warnings = Vec::new();
+        snapshot.usage = scan_or_cached_usage(
+            &self.storage,
+            "antigravity",
+            CacheIdentity::Unscoped,
+            "Antigravity",
+            || local_usage::scan(snapshot.refreshed_at, &pricing, &mut scan_warnings),
+            &mut snapshot.warnings,
+        );
+        snapshot.warnings.extend(scan_warnings);
+        Ok(snapshot)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
+    use std::{cell::Cell, path::Path, sync::Arc};
 
     use chrono::{Duration, TimeZone, Utc};
+
+    use crate::{pricing::PricingStore, storage::Storage};
 
     use super::{
         access_token_candidates, auth::AntigravityToken, credential_failure, has_refresh_source,
         should_refresh_access_token, AntigravityError, AntigravityProvider,
     };
 
+    pub(super) fn provider_at(directory: &Path) -> AntigravityProvider {
+        AntigravityProvider::new(
+            directory.join("token.json"),
+            Arc::new(Storage::open(&directory.join("openquota.db")).unwrap()),
+            Arc::new(PricingStore::new(directory.join("pricing")).unwrap()),
+        )
+        .unwrap()
+    }
+
     #[test]
     fn failed_cli_report_leaves_credential_fallback_available() {
         let directory = tempfile::tempdir().unwrap();
-        let provider = AntigravityProvider::new(directory.path().join("token.json")).unwrap();
+        let provider = provider_at(directory.path());
 
         let result = provider
             .refresh_from_cli_or_credentials(Some(Err(AntigravityError::Unavailable)), || {

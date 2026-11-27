@@ -13,6 +13,15 @@ OpenQuota tracks the shared Gemini and Claude quota pools reported by Antigravit
 
 Only the pools available to the signed-in account are shown.
 
+Usage Trend and the Today, Yesterday, and Last 30 Days breakdowns use
+local Antigravity CLI conversation databases. Token counts are available
+even when a model has no known price. Dollar amounts estimate what the
+recorded token usage would cost at the model's API rates.
+
+The reader also looks for compatible SQLite conversation files from the
+Antigravity app and IDE. Coverage for those clients has yet to be verified.
+Older `.pb` conversations do not contribute to usage history.
+
 ## Sign-in and local data
 
 Sign in through Antigravity or run `agy`. OpenQuota can read the quota from a compatible running
