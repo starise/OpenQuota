@@ -9,7 +9,7 @@
     "build": "vite build",
     "build:installer": "tauri build --bundles nsis",
     "build:linux": "tauri build --bundles deb,appimage",
-    "check": "svelte-check --tsconfig ./tsconfig.app.json",
+    "check": "tsc -p tsconfig.node.json && svelte-check --tsconfig ./tsconfig.app.json",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:watch": "vitest",
