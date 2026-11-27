@@ -583,9 +583,8 @@ pub fn fit_panel_to_content(window: &WebviewWindow, height: u32) -> Result<bool,
     // Show/open and native drag setup already install the constraints. Auto-fit only needs the
     // current monitor clamp here; reapplying native min/max constraints on every animation frame
     // causes unnecessary platform window-manager work.
-    let maximum = panel_maximum_height(window)?;
-    let minimum = PANEL_MIN_HEIGHT.min(maximum);
-    resize_panel_for_context(window, height.clamp(minimum, maximum))?;
+    let height = panel_height_bounds(window)?.clamp(height);
+    resize_panel_for_context(window, height)?;
     Ok(true)
 }
 
@@ -603,13 +602,47 @@ pub fn prepare_native_panel_resize(window: &WebviewWindow) -> Result<PanelResize
     Ok(edge)
 }
 
-pub fn set_manual_panel_height(window: &WebviewWindow) -> Result<(), String> {
+#[derive(Serialize)]
+pub struct PanelHeightBounds {
+    minimum: u32,
+    maximum: u32,
+}
+
+impl PanelHeightBounds {
+    fn clamp(&self, height: u32) -> u32 {
+        height.clamp(self.minimum, self.maximum)
+    }
+
+    fn adjusted_height(&self, height: u32, adjustment: i32) -> u32 {
+        self.clamp(height.saturating_add_signed(adjustment))
+    }
+}
+
+pub fn panel_height_bounds(window: &WebviewWindow) -> Result<PanelHeightBounds, String> {
+    let maximum = panel_maximum_height(window)?;
+    Ok(PanelHeightBounds {
+        minimum: PANEL_MIN_HEIGHT.min(maximum),
+        maximum,
+    })
+}
+
+pub fn set_manual_panel_height(
+    window: &WebviewWindow,
+    adjustment: Option<i32>,
+) -> Result<(), String> {
     let height = current_logical_height(&window.as_ref().window())
         .ok_or("OpenQuota content size is unavailable.")?;
-    window
-        .app_handle()
-        .state::<Arc<PanelResizeSession>>()
-        .set_manual(height)
+    let session = window.app_handle().state::<Arc<PanelResizeSession>>();
+    let Some(adjustment) = adjustment else {
+        return session.set_manual(height);
+    };
+
+    let target = panel_height_bounds(window)?.adjusted_height(height, adjustment);
+    if target == height {
+        return Ok(());
+    }
+    resize_panel_for_context(window, target)?;
+    session.set_manual(target)
 }
 
 pub fn finish_native_panel_resize(window: &WebviewWindow) {
@@ -831,12 +864,25 @@ mod tests {
 
     use super::{
         anchored_vertical_frame, panel_resize_edge_for_context, panel_resize_edge_for_frames,
-        panel_surface_color, PanelHeightMode, PanelResizeEdge, PanelResizeSession, VerticalFrame,
-        DARK_PANEL_SURFACE, LIGHT_PANEL_SURFACE,
+        panel_surface_color, PanelHeightBounds, PanelHeightMode, PanelResizeEdge,
+        PanelResizeSession, VerticalFrame, DARK_PANEL_SURFACE, LIGHT_PANEL_SURFACE,
     };
     use crate::models::ThemePreference;
     use crate::storage::Storage;
     use tauri::Theme;
+
+    #[test]
+    fn keyboard_adjustment_stays_within_the_native_height_limits() {
+        let bounds = PanelHeightBounds {
+            minimum: 240,
+            maximum: 550,
+        };
+
+        assert_eq!(bounds.adjusted_height(400, 24), 424);
+        assert_eq!(bounds.adjusted_height(400, -24), 376);
+        assert_eq!(bounds.adjusted_height(245, -24), 240);
+        assert_eq!(bounds.adjusted_height(545, 24), 550);
+    }
 
     #[test]
     fn a_real_resize_owns_the_height_until_automatic_mode_is_restored() {

@@ -6,6 +6,7 @@
     dismissMainWindow,
     getBootstrapState,
     getLogPath,
+    getPanelHeightBounds,
     getPanelHeightMode,
     getPanelResizeEdge,
     lockPanelResizeAxis,
@@ -17,6 +18,7 @@
     openProviderLink as openProviderLinkCommand,
     openLogFolder as openSystemLogFolder,
     openNotificationSettings as openSystemNotificationSettings,
+    type PanelHeightBounds,
     type PanelHeightMode,
     type PanelResizeEdge,
     quitApplication,
@@ -40,6 +42,7 @@
   import { springMotion } from './lib/motion';
   import OpenQuotaMark from './lib/OpenQuotaMark.svelte';
   import { horizontalPageTransition, shouldSlideBetweenScreens } from './lib/pageTransition';
+  import { PANEL_MIN_HEIGHT, panelMaximumHeight } from './lib/panelSizing';
   import { desktopPlatform, shortcutLabels } from './lib/platform';
   import { withProviderName } from './lib/providerNames';
   import RenameProviderSheet from './lib/RenameProviderSheet.svelte';
@@ -105,6 +108,8 @@
   const updates = new UpdateController();
   let resizeEdge = $state<PanelResizeEdge>(platform === 'windows' ? 'top' : 'bottom');
   const renderedResizeEdge = $derived(floatingWindow ? 'bottom' : resizeEdge);
+  let panelViewportHeight = $state(window.innerHeight);
+  let panelHeightBounds = $state<PanelHeightBounds>();
   let panelHeightMode = $state<PanelHeightMode>('automatic');
   let panelHeightModeRequest = 0;
   let panelHeightModeMutation: Promise<void> = Promise.resolve();
@@ -557,6 +562,27 @@
     panelHeightModeRequest += 1;
     panelHeightMode = mode;
   }
+  function updatePanelHeightBounds() {
+    if (!('__TAURI_INTERNALS__' in window)) return;
+    void getPanelHeightBounds()
+      .then((bounds) => (panelHeightBounds = bounds))
+      .catch(() => undefined);
+  }
+  function handlePanelResizeKeydown(event: KeyboardEvent, edge: PanelResizeEdge) {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.isComposing)
+      return;
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown' && event.key !== 'Enter') return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (panelResizeOperation) return;
+    if (event.key === 'Enter') {
+      if (!event.repeat) void changePanelHeightMode('automatic');
+      return;
+    }
+
+    const grow = event.key === (edge === 'top' ? 'ArrowUp' : 'ArrowDown');
+    void changePanelHeightMode('manual', grow ? 24 : -24);
+  }
   function handlePanelResizePointerDown(event: PointerEvent) {
     if (event.button !== 0) return;
     event.preventDefault();
@@ -603,11 +629,11 @@
       .startDragging()
       .catch(() => (settingsError = 'OpenQuota window could not be moved.'));
   }
-  async function changePanelHeightMode(mode: PanelHeightMode) {
+  async function changePanelHeightMode(mode: PanelHeightMode, adjustment?: number) {
     if (!('__TAURI_INTERNALS__' in window)) return;
     const request = ++panelHeightModeRequest;
     const operation = panelHeightModeMutation.then(() =>
-      mode === 'automatic' ? setPanelHeightAutomatic() : setPanelHeightManual(),
+      mode === 'automatic' ? setPanelHeightAutomatic() : setPanelHeightManual(adjustment),
     );
     panelHeightModeMutation = operation.catch(() => undefined);
     try {
@@ -615,7 +641,10 @@
       if (request === panelHeightModeRequest) updatePanelHeightMode();
     } catch {
       if (request !== panelHeightModeRequest) return;
-      settingsError = 'OpenQuota could not change the panel height mode.';
+      settingsError =
+        adjustment === undefined
+          ? 'OpenQuota could not change the panel height mode.'
+          : 'OpenQuota panel height could not be adjusted.';
       updatePanelHeightMode();
     }
   }
@@ -776,7 +805,31 @@
 </script>
 
 <svelte:head><meta name="color-scheme" content="light dark"></svelte:head>
-<svelte:window onpointerdown={handleWindowPointerDown} />
+<svelte:window bind:innerHeight={panelViewportHeight} onpointerdown={handleWindowPointerDown} />
+
+{#snippet resizeHandle(edge: PanelResizeEdge)}
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions (A focusable separator is an interactive splitter.) -->
+  <!-- biome-ignore lint/a11y/useSemanticElements: A focusable separator adjusts the window with the pointer and keyboard. -->
+  <div
+    class="panel-resize-dragger panel-resize-dragger--{edge}"
+    role="separator"
+    tabindex="0"
+    aria-label="Resize panel height"
+    aria-describedby="panel-resize-instructions"
+    aria-controls={settingsState ? 'panel-content' : undefined}
+    aria-orientation="horizontal"
+    aria-valuemin={Math.min(panelViewportHeight, panelHeightBounds?.minimum ?? PANEL_MIN_HEIGHT)}
+    aria-valuemax={Math.max(
+      panelViewportHeight,
+      panelHeightBounds?.maximum ?? panelMaximumHeight(window.screen.availHeight),
+    )}
+    aria-valuenow={panelViewportHeight}
+    aria-valuetext={`${panelViewportHeight} pixels`}
+    onfocus={updatePanelHeightBounds}
+    onkeydown={(event) => handlePanelResizeKeydown(event, edge)}
+    onpointerdown={handlePanelResizePointerDown}
+  ></div>
+{/snippet}
 
 <main
   class="popover"
@@ -788,15 +841,11 @@
   <p id="reorder-instructions" class="sr-only">
     Drag to reorder. With a keyboard, use Alt plus Up Arrow or Alt plus Down Arrow.
   </p>
+  <p id="panel-resize-instructions" class="sr-only">
+    Use Up or Down Arrow to move the handle. Press Enter for automatic panel height.
+  </p>
   {#if renderedResizeEdge === 'top'}
-    <!-- biome-ignore lint/a11y/useSemanticElements: This separator resizes the window by pointer drag. -->
-    <div
-      class="panel-resize-dragger panel-resize-dragger--top"
-      role="separator"
-      aria-label="Resize panel height"
-      aria-orientation="horizontal"
-      onpointerdown={handlePanelResizePointerDown}
-    ></div>
+    {@render resizeHandle('top')}
   {/if}
   {#if floatingWindow}
     <!-- biome-ignore lint/a11y/useSemanticElements: Names the window controls as a group without form semantics. -->
@@ -858,7 +907,7 @@
           {settingsError}
         </div>
       {/if}
-      <div class="screen-stage">
+      <div id="panel-content" class="screen-stage">
         {#key screen}
           <div
             class="screen-page"
@@ -1118,14 +1167,7 @@
     </div>
   {/if}
   {#if renderedResizeEdge === 'bottom'}
-    <!-- biome-ignore lint/a11y/useSemanticElements: This separator resizes the window by pointer drag. -->
-    <div
-      class="panel-resize-dragger panel-resize-dragger--bottom"
-      role="separator"
-      aria-label="Resize panel height"
-      aria-orientation="horizontal"
-      onpointerdown={handlePanelResizePointerDown}
-    ></div>
+    {@render resizeHandle('bottom')}
   {/if}
 </main>
 <Tooltip />
@@ -1245,7 +1287,13 @@
         background-color 120ms ease;
     }
 
-    .panel-resize-dragger:hover::after {
+    .panel-resize-dragger:focus-visible {
+      outline: 2px solid var(--meter-fill);
+      outline-offset: -2px;
+    }
+
+    .panel-resize-dragger:hover::after,
+    .panel-resize-dragger:focus-visible::after {
       width: 42px;
       background: var(--tertiary);
     }

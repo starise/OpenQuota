@@ -44,6 +44,7 @@ type InvokeArgs = {
   providerId?: string;
   linkIndex?: number;
   height?: number;
+  adjustment?: number;
 };
 type InvokeImplementation = (command: string, args?: InvokeArgs) => unknown;
 
@@ -1664,6 +1665,78 @@ describe('OpenQuota dashboard', () => {
     screen.getByLabelText('OpenQuota usage dashboard').dispatchEvent(event);
     expect(event.defaultPrevented).toBe(true);
   });
+
+  it.each([
+    { mode: 'popup', edge: 'top', growKey: 'ArrowUp', shrinkKey: 'ArrowDown' },
+    { mode: 'floating', edge: 'bottom', growKey: 'ArrowDown', shrinkKey: 'ArrowUp' },
+  ] as const)(
+    'resizes the $mode window from its keyboard handle',
+    async ({ mode, edge, growKey, shrinkKey }) => {
+      const originalHeight = window.innerHeight;
+      Object.defineProperty(window, '__TAURI_INTERNALS__', { configurable: true, value: {} });
+      const defaultInvoke = required(mocks.invoke.getMockImplementation());
+      let heightMode: PanelHeightMode = 'automatic';
+      let height = 400;
+      window.innerHeight = height;
+      mockInvoke((command: string, args?: InvokeArgs) => {
+        if (command === 'get_panel_resize_edge') return Promise.resolve('top');
+        if (command === 'get_panel_height_mode') return Promise.resolve(heightMode);
+        if (command === 'get_panel_height_bounds') {
+          return Promise.resolve({ minimum: 240, maximum: 550 });
+        }
+        if (command === 'get_app_settings') {
+          return Promise.resolve({
+            ...settingsState,
+            settings: { ...settingsState.settings, windowMode: mode },
+          });
+        }
+        if (command === 'set_panel_height_manual') {
+          heightMode = 'manual';
+          height += required(args?.adjustment);
+          window.innerHeight = height;
+          window.dispatchEvent(new Event('resize'));
+          return Promise.resolve();
+        }
+        if (command === 'set_panel_height_automatic') {
+          heightMode = 'automatic';
+          return Promise.resolve();
+        }
+        return defaultInvoke(command, args);
+      });
+
+      try {
+        render(App);
+        await screen.findByText('Plus');
+        await waitFor(() =>
+          expect(screen.getByRole('separator', { name: 'Resize panel height' })).toHaveClass(
+            `panel-resize-dragger--${edge}`,
+          ),
+        );
+        const grip = screen.getByRole('separator', { name: 'Resize panel height' });
+        expect(grip).toHaveAttribute('tabindex', '0');
+        grip.focus();
+        await waitFor(() => expect(grip).toHaveAttribute('aria-valuemax', '550'));
+        expect(grip).toHaveAttribute('aria-valuemin', '240');
+        expect(grip).toHaveAttribute('aria-valuetext', '400 pixels');
+
+        await fireEvent.keyDown(grip, { key: growKey });
+        await waitFor(() => expect(grip).toHaveAttribute('aria-valuetext', '424 pixels'));
+        await fireEvent.keyDown(grip, { key: shrinkKey });
+        await waitFor(() => expect(grip).toHaveAttribute('aria-valuetext', '400 pixels'));
+
+        await fireEvent.keyDown(grip, { key: 'Enter' });
+        await waitFor(() =>
+          expect(mocks.invoke).toHaveBeenCalledWith('set_panel_height_automatic'),
+        );
+        expect(grip).toHaveFocus();
+        expect(screen.getByText('Plus')).toBeInTheDocument();
+        expect(mocks.startResizeDragging).not.toHaveBeenCalled();
+      } finally {
+        window.innerHeight = originalHeight;
+        delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+      }
+    },
+  );
 
   it('keeps native persistence active through synthetic pointer handoff events', async () => {
     Object.defineProperty(window, '__TAURI_INTERNALS__', {

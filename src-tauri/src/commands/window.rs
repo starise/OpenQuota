@@ -4,9 +4,9 @@ use crate::{
     desktop_integration::DesktopIntegration,
     window::{
         finish_native_panel_resize, fit_panel_to_content as fit_native_panel_to_content,
-        hide_main_window, lock_native_panel_resize_axis, panel_resize_edge,
-        prepare_native_panel_resize, set_manual_panel_height, PanelHeightMode, PanelResizeEdge,
-        PanelResizeSession, MAIN_WINDOW,
+        hide_main_window, lock_native_panel_resize_axis, panel_height_bounds, panel_resize_edge,
+        prepare_native_panel_resize, set_manual_panel_height, PanelHeightBounds, PanelHeightMode,
+        PanelResizeEdge, PanelResizeSession, MAIN_WINDOW,
     },
 };
 
@@ -51,11 +51,19 @@ pub fn set_panel_height_automatic(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn set_panel_height_manual(app: AppHandle) -> Result<(), String> {
+pub fn get_panel_height_bounds(app: AppHandle) -> Result<PanelHeightBounds, String> {
     let window = app
         .get_webview_window(MAIN_WINDOW)
         .ok_or("OpenQuota window is unavailable.")?;
-    set_manual_panel_height(&window)
+    panel_height_bounds(&window)
+}
+
+#[tauri::command]
+pub fn set_panel_height_manual(app: AppHandle, adjustment: Option<i32>) -> Result<(), String> {
+    let window = app
+        .get_webview_window(MAIN_WINDOW)
+        .ok_or("OpenQuota window is unavailable.")?;
+    set_manual_panel_height(&window, adjustment)
 }
 
 #[tauri::command]

@@ -16,6 +16,7 @@ type StopListening = () => void;
 type PayloadHandler<T> = (payload: T) => void;
 export type PanelResizeEdge = 'top' | 'bottom';
 export type PanelHeightMode = 'automatic' | 'manual';
+export type PanelHeightBounds = { minimum: number; maximum: number };
 
 function onEvent<T>(name: string, handler: PayloadHandler<T>): Promise<StopListening> {
   return listen<T>(name, (event) => handler(event.payload));
@@ -137,8 +138,13 @@ export function setPanelHeightAutomatic() {
   return invoke<void>('set_panel_height_automatic');
 }
 
-export function setPanelHeightManual() {
-  return invoke<void>('set_panel_height_manual');
+export function getPanelHeightBounds() {
+  return invoke<PanelHeightBounds>('get_panel_height_bounds');
+}
+
+export function setPanelHeightManual(adjustment?: number) {
+  if (adjustment === undefined) return invoke<void>('set_panel_height_manual');
+  return invoke<void>('set_panel_height_manual', { adjustment });
 }
 
 export function beginPanelResize() {
