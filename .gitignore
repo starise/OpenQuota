@@ -1,6 +1,8 @@
 node_modules/
 dist/
 coverage/
+test-results/
+playwright-report/
 .svelte-kit/
 src-tauri/target/
 src-tauri/gen/

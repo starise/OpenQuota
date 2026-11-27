@@ -11,6 +11,7 @@
     "build:linux": "tauri build --bundles deb,appimage",
     "check": "svelte-check --tsconfig ./tsconfig.app.json",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "test:watch": "vitest",
     "lint": "biome ci . && eslint \"src/**/*.svelte\" \"src/**/*.svelte.ts\"",
     "format": "biome check --write --linter-enabled=false .",
@@ -29,6 +30,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.6.9",
     "@eslint/js": "^10.0.0",
+    "@playwright/test": "^1.65.1",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@tauri-apps/cli": "^2.12.6",
     "@testing-library/jest-dom": "^7.0.1",
